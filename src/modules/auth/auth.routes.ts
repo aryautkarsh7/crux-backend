@@ -4,10 +4,18 @@ import { authenticate } from '../../lib/auth.js';
 import { notFound } from '../../lib/errors.js';
 import { UserModel } from '../../models/user.model.js';
 import { requestOtp, verifyOtp } from './auth.service.js';
+import { ensureDemoLocker } from '../me/demo-locker.js';
 
 const phoneBody = z.object({ phone: z.string() });
 const verifyBody = z.object({ phone: z.string(), code: z.string().trim() });
-const profileBody = z.object({ name: z.string().trim().max(80).optional(), abhaId: z.string().trim().max(32).optional() });
+const profileBody = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  email: z.string().trim().email('Enter a valid email').or(z.literal('')).optional(),
+  gender: z.enum(['female', 'male', 'other', '']).optional(),
+  dob: z.coerce.date().max(new Date(), 'Date of birth cannot be in the future').optional(),
+  bloodGroup: z.enum(['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional(),
+  abhaId: z.string().trim().regex(/^(\d{2}-\d{4}-\d{4}-\d{4})?$/, 'ABHA number looks like 91-1234-5678-9012').optional(),
+});
 
 const userShape = {
   type: 'object',
@@ -15,14 +23,24 @@ const userShape = {
     id: { type: 'string' },
     phone: { type: 'string' },
     name: { type: 'string' },
+    email: { type: 'string' },
+    gender: { type: 'string' },
+    dob: { type: ['string', 'null'] },
+    bloodGroup: { type: 'string' },
     abhaId: { type: 'string' },
   },
 } as const;
 
-const toUser = (u: { _id: unknown; phone: string; name?: string; abhaId?: string }) => ({
+type UserDoc = { _id: unknown; phone: string; name?: string | null; email?: string | null; gender?: string | null; dob?: Date | null; bloodGroup?: string | null; abhaId?: string | null };
+
+const toUser = (u: UserDoc) => ({
   id: String(u._id),
   phone: u.phone,
   name: u.name ?? '',
+  email: u.email ?? '',
+  gender: u.gender ?? '',
+  dob: u.dob ? new Date(u.dob).toISOString() : null,
+  bloodGroup: u.bloodGroup ?? '',
   abhaId: u.abhaId ?? '',
 });
 
@@ -43,7 +61,9 @@ export async function authRoutes(app: FastifyInstance) {
     },
   }, async (request) => {
     const { phone, code } = verifyBody.parse(request.body);
-    const user = await verifyOtp(phone, code);
+    const verified = await verifyOtp(phone, code);
+    await ensureDemoLocker(verified._id, verified.phone);
+    const user = (await UserModel.findById(verified._id).lean())!;
     const token = await request.server.jwt.sign({ sub: String(user._id), phone: user.phone }, { expiresIn: '30d' });
     return { token, user: toUser(user) };
   });
@@ -57,7 +77,7 @@ export async function authRoutes(app: FastifyInstance) {
     return { user: toUser(user) };
   });
 
-  app.patch('/me', { preHandler: authenticate }, async (request) => {
+  app.patch('/me', { preHandler: authenticate, schema: { response: { 200: { type: 'object', properties: { user: userShape } } } } }, async (request) => {
     const patch = profileBody.parse(request.body);
     const user = await UserModel.findByIdAndUpdate(request.user.sub, patch, { new: true }).lean();
     if (!user) throw notFound('Account not found');
