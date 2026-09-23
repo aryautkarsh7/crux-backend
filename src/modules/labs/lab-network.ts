@@ -1,4 +1,5 @@
-import { DEFAULT_PINCODE, distanceKm, locate, type Place } from '../../lib/geo.js';
+import { resolveCitySlug } from '../../db/data/cities.js';
+import { DEFAULT_PINCODE, cityOrigin, distanceKm, locate, type Place } from '../../lib/geo.js';
 import { LabModel, type Lab } from '../../models/lab.model.js';
 import { OrderModel } from '../../models/order.model.js';
 
@@ -35,10 +36,18 @@ export const DEFAULT_LAB = 'curxx-diagnostics-koramangala';
 
 export const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export const loadLabs = (city = 'bangalore') => LabModel.find({ city }).lean<LabDoc[]>();
+export const loadLabs = (city = 'bangalore') => LabModel.find({ city: resolveCitySlug(city) ?? city }).lean<LabDoc[]>();
 
-/** The patient's location from a pincode, falling back to our default neighbourhood. */
-export const origin = (pincode?: string): Place => (pincode ? locate(pincode) : null) ?? locate(DEFAULT_PINCODE)!;
+/** The patient's location from a pincode, else the centre of their city, else our default neighbourhood. */
+export const origin = (pincode?: string, city?: string): Place => {
+  const located = pincode ? locate(pincode) : null;
+  if (located) return located;
+  const slug = city ? resolveCitySlug(city) : null;
+  return slug ? cityOrigin(slug) : locate(DEFAULT_PINCODE)!;
+};
+
+/** Scans and procedures need the patient at the centre — they can't be collected at home. */
+export const visitOnly = (tests: { slug: string; name: string; homeCollection?: boolean | null }[]) => tests.filter((t) => t.homeCollection === false);
 
 /** How well a lab suits a patient at `place` who wants `testSlugs`. */
 export function fit(lab: LabDoc, place: Place, testSlugs: string[] = []) {

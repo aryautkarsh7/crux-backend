@@ -9,7 +9,7 @@ import { MedicineModel } from '../../models/medicine.model.js';
 import { OrderModel } from '../../models/order.model.js';
 import { locate } from '../../lib/geo.js';
 import { LabModel } from '../../models/lab.model.js';
-import { collectionAvailability, collectionStart, eligibleLabs, fit, labSnapshot, loadLabs, origin } from '../labs/lab-network.js';
+import { collectionAvailability, collectionStart, eligibleLabs, fit, labSnapshot, loadLabs, origin, visitOnly } from '../labs/lab-network.js';
 import { REPORT_TURNAROUND_MS, materializeLabReports } from './lab-reports.js';
 
 const address = z.object({
@@ -138,6 +138,10 @@ export async function orderRoutes(app: FastifyInstance) {
 
     const mode = body.collectionMode;
     if (mode === 'home' && !body.address) throw badRequest('Add the address where we should collect the sample', 'address_required');
+    if (mode === 'home') {
+      const atCentre = visitOnly(tests);
+      if (atCentre.length) throw badRequest(`${atCentre.map((t) => t.name).join(', ')} can’t be done at home. Book a lab visit for ${atCentre.length > 1 ? 'these' : 'it'}.`, 'visit_only');
+    }
     const place = mode === 'home' ? locate(body.address!.pincode) : origin();
     if (!place) throw badRequest(`Home collection isn’t available at ${body.address!.pincode} yet. You can book a lab visit instead.`, 'not_serviceable');
 
@@ -154,7 +158,7 @@ export async function orderRoutes(app: FastifyInstance) {
       if (mode === 'lab' && !match.canVisit) throw badRequest(`${lab.shortName} doesn’t take walk-ins`, 'lab_no_walk_in');
     } else {
       if (mode === 'lab') throw badRequest('Choose the lab you will visit', 'lab_required');
-      lab = eligibleLabs(await loadLabs(), place, slugs, 'home')[0]?.lab;
+      lab = eligibleLabs(await loadLabs(place.city), place, slugs, 'home')[0]?.lab;
       if (!lab) throw badRequest(`No partner lab collects at ${place.area} (${place.pincode}) for all these tests. You can book a lab visit instead.`, 'not_serviceable');
     }
 

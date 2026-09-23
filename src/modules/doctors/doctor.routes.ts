@@ -1,13 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { CITIES, CITY_BY_SLUG, resolveCitySlug } from '../../db/data/cities.js';
+import { CONDITIONS } from '../../db/data/conditions.js';
+import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { notFound } from '../../lib/errors.js';
+import { escapeRegex } from '../../lib/http.js';
+import { ensureSlots } from '../../lib/slot-gen.js';
+import { bookableSlot } from '../../lib/slots.js';
 import { DoctorModel } from '../../models/doctor.model.js';
-import { SlotModel } from '../../models/slot.model.js';
-import { SpecialtyModel } from '../../models/specialty.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
 import { ReviewModel } from '../../models/review.model.js';
-import { bookableSlot } from '../../lib/slots.js';
-import { escapeRegex } from '../../lib/http.js';
+import { SlotModel } from '../../models/slot.model.js';
+import { SpecialtyModel } from '../../models/specialty.model.js';
+import { specialtyContent } from './specialty-content.js';
 
 const listQuery = z.object({
   city: z.string().default('bangalore'),
@@ -17,27 +22,30 @@ const listQuery = z.object({
   mode: z.enum(['clinic', 'video']).optional(),
   area: z.string().trim().min(1).optional(),
   language: z.string().trim().min(1).optional(),
-  availability: z.enum(['today', 'tomorrow', 'next-7-days']).optional(),
+  availability: z.enum(['now', 'today', 'tomorrow', 'next-7-days']).optional(),
+  free: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   maxFee: z.coerce.number().positive().optional(),
   minExperience: z.coerce.number().min(0).optional(),
-  sort: z.enum(['relevance', 'fee_asc', 'fee_desc', 'experience', 'rating']).default('relevance'),
+  sort: z.enum(['relevance', 'fee_asc', 'fee_desc', 'experience', 'rating', 'soonest']).default('relevance'),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
 const SORTS: Record<string, Record<string, 1 | -1>> = {
-  relevance: { recommendPercent: -1, rating: -1 },
+  relevance: { recommendPercent: -1, rating: -1, reviewCount: -1 },
   fee_asc: { fee: 1 },
   fee_desc: { fee: -1 },
   experience: { experienceYears: -1 },
-  rating: { rating: -1 },
+  rating: { rating: -1, reviewCount: -1 },
+  soonest: { recommendPercent: -1 },
 };
 
 // Catalogue data is public and changes rarely: let the CDN and browser cache it.
 const CATALOGUE_CACHE = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
+const SLOT_FIELDS = 'slug fee videoFee schedule freeVideo instant slotsThrough';
 
 /** Start/end of the requested availability window, defaulting to the next 7 days. */
-function availabilityWindow(availability?: 'today' | 'tomorrow' | 'next-7-days') {
+export function availabilityWindow(availability?: 'now' | 'today' | 'tomorrow' | 'next-7-days') {
   const now = new Date();
   const endOfDay = (offsetDays: number) => {
     const d = new Date(now);
@@ -45,6 +53,8 @@ function availabilityWindow(availability?: 'today' | 'tomorrow' | 'next-7-days')
     d.setHours(23, 59, 59, 999);
     return d;
   };
+  // "Consult now": a video slot starting within the hour.
+  if (availability === 'now') return { $gte: now, $lte: new Date(now.getTime() + 60 * 60 * 1000) };
   if (availability === 'today') return { $gte: now, $lte: endOfDay(0) };
   if (availability === 'tomorrow') {
     const start = new Date(now);
@@ -55,79 +65,180 @@ function availabilityWindow(availability?: 'today' | 'tomorrow' | 'next-7-days')
   return { $gte: now, $lte: endOfDay(7) };
 }
 
+export const resolveSpecialtySlug = (slug?: string) => (slug ? SPECIALTY_ALIASES[slug] ?? slug : slug);
+
+const dto = ({ _id, createdAt: _c, updatedAt: _u, schedule: _s, slotsThrough: _t, ...d }: Record<string, any>) => ({ id: String(_id), ...d });
+
 export async function doctorRoutes(app: FastifyInstance) {
-  app.get('/specialties', async (request, reply) => {
-    const { city, mode } = z
-      .object({ city: z.string().default('bangalore'), mode: z.enum(['clinic', 'video']).optional() })
-      .parse(request.query);
-
-    const specialties = await SpecialtyModel.find().sort({ name: 1 }).lean();
+  // ---- Cities ----
+  app.get('/cities', async (_request, reply) => {
+    const counts = await DoctorModel.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$city', count: { $sum: 1 } } }]);
+    const byCity = new Map(counts.map((c) => [c._id, c.count]));
     reply.header('cache-control', CATALOGUE_CACHE);
-    if (!mode) return { specialties: specialties.map(({ _id, ...s }) => s) };
-
-    // With a mode, each specialty also reports how many of its doctors have an open
-    // slot of that kind this week — the instant-consult flow leads with that number.
-    const bookable = await SlotModel.distinct('doctorSlug', { mode, startsAt: availabilityWindow(), ...bookableSlot() });
-    const counts = await DoctorModel.aggregate<{ _id: string; count: number }>([
-      { $match: { city, slug: { $in: bookable } } },
-      { $group: { _id: '$specialty', count: { $sum: 1 } } },
-    ]);
-    const bySpecialty = new Map(counts.map((c) => [c._id, c.count]));
-
-    return { specialties: specialties.map(({ _id, ...s }) => ({ ...s, availableDoctors: bySpecialty.get(s.slug) ?? 0 })) };
+    return {
+      cities: CITIES.map((c) => ({ slug: c.slug, name: c.name, state: c.state, tier: c.tier, doctorCount: byCity.get(c.slug) ?? 0, localities: c.localities.map((l) => ({ slug: l.slug, name: l.name, pincode: l.pincode })) })),
+    };
   });
 
+  app.get('/cities/:slug', async (request, reply) => {
+    const { slug } = z.object({ slug: z.string() }).parse(request.params);
+    const canonical = resolveCitySlug(slug);
+    const city = canonical ? CITY_BY_SLUG.get(canonical) : undefined;
+    if (!city) throw notFound('We don’t serve this city yet');
+    const [areas, facilities] = await Promise.all([
+      DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { city: city.slug } }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
+      FacilityModel.countDocuments({ city: city.slug }),
+    ]);
+    const byArea = new Map(areas.map((a) => [a._id, a.count]));
+    reply.header('cache-control', CATALOGUE_CACHE);
+    return {
+      city: { slug: city.slug, name: city.name, state: city.state, council: city.council, facilityCount: facilities },
+      localities: city.localities.map((l) => ({ ...l, doctorCount: byArea.get(l.name) ?? 0 })),
+    };
+  });
+
+  // ---- Specialties ----
+  app.get('/specialties', async (request, reply) => {
+    const { city: rawCity, mode } = z
+      .object({ city: z.string().default('bangalore'), mode: z.enum(['clinic', 'video']).optional() })
+      .parse(request.query);
+    const city = resolveCitySlug(rawCity) ?? 'bangalore';
+
+    const [specialties, counts] = await Promise.all([
+      SpecialtyModel.find().sort({ name: 1 }).lean(),
+      DoctorModel.aggregate<{ _id: string; count: number; video: number }>([
+        { $match: { city } },
+        { $group: { _id: '$specialty', count: { $sum: 1 }, video: { $sum: { $cond: [{ $ne: ['$schedule.video', 'none'] }, 1, 0] } } } },
+      ]),
+    ]);
+    const bySpecialty = new Map(counts.map((c) => [c._id, c]));
+    reply.header('cache-control', CATALOGUE_CACHE);
+    return {
+      categories: SPECIALTY_CATEGORIES,
+      specialties: specialties.map(({ _id, createdAt: _c, updatedAt: _u, keywords: _k, ...s }) => ({
+        ...s,
+        doctorCount: bySpecialty.get(s.slug)?.count ?? 0,
+        // With a mode, how many of its doctors offer that kind of consult — every schedule has slots this week.
+        availableDoctors: mode === 'video' ? bySpecialty.get(s.slug)?.video ?? 0 : bySpecialty.get(s.slug)?.count ?? 0,
+      })),
+    };
+  });
+
+  /** SEO content for a specialty listing: about, conditions, FAQs, related links — specific to specialty, city and locality. */
+  app.get('/specialties/:slug', async (request, reply) => {
+    const { slug: raw } = z.object({ slug: z.string() }).parse(request.params);
+    const { city: rawCity, area } = z.object({ city: z.string().default('bangalore'), area: z.string().optional() }).parse(request.query);
+    const slug = resolveSpecialtySlug(raw)!;
+    const city = CITY_BY_SLUG.get(resolveCitySlug(rawCity) ?? '');
+    if (!city) throw notFound('We don’t serve this city yet');
+    const specialty = await SpecialtyModel.findOne({ slug }).lean();
+    if (!specialty) throw notFound('Specialty not found');
+    const content = await specialtyContent(specialty, city, area);
+    reply.header('cache-control', CATALOGUE_CACHE);
+    return content;
+  });
+
+  // ---- Doctors ----
   app.get('/doctors', async (request, reply) => {
-    const { city, specialty, focus, q, mode, area, language, availability, maxFee, minExperience, sort, page, limit } =
-      listQuery.parse(request.query);
+    const query = listQuery.parse(request.query);
+    const { focus, q, mode, area, language, availability, free, maxFee, minExperience, sort, page, limit } = query;
+    const city = resolveCitySlug(query.city) ?? query.city;
+    const specialty = resolveSpecialtySlug(query.specialty);
 
     const filter: Record<string, unknown> = { city };
     if (specialty && specialty !== 'doctors') filter.specialty = specialty;
     if (focus) filter.focusAreas = focus;
     if (maxFee) filter.fee = { $lte: maxFee };
     if (minExperience) filter.experienceYears = { $gte: minExperience };
-    if (area) filter.area = area;
+    if (area) filter.area = new RegExp(`^${escapeRegex(area)}$`, 'i');
     if (language) filter.languages = language;
+    if (free) filter.freeVideo = true;
+    if (mode === 'video') filter['schedule.video'] = { $ne: 'none' };
+    let matchedSpecialties: string[] = [];
+    let specialtyOrder: string[] = [];
     if (q) {
       const re = new RegExp(escapeRegex(q), 'i');
       // "Dermatologist" matches the specialty; "acne" or "fever" matches what doctors treat.
-      const catalogue = await SpecialtyModel.find({}, { slug: 1, name: 1, plural: 1, subSpecialties: 1 }).lean();
-      const specialtySlugs = catalogue.filter((sp) => re.test(sp.name) || re.test(sp.plural)).map((sp) => sp.slug);
+      const catalogue = await SpecialtyModel.find({}, { slug: 1, name: 1, plural: 1, subSpecialties: 1, conditions: 1, keywords: 1 }).lean();
+      const words = q.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+      const hitsKeywords = (keywords?: string | null) => {
+        if (!keywords) return false;
+        try {
+          return new RegExp(`\\b(${keywords})`, 'i').test(q) || words.some((w) => new RegExp(`\\b(${keywords})`, 'i').test(w));
+        } catch {
+          return false;
+        }
+      };
+      matchedSpecialties = catalogue.filter((sp) => re.test(sp.name) || re.test(sp.plural) || sp.conditions?.some((c) => re.test(c)) || hitsKeywords(sp.keywords)).map((sp) => sp.slug);
       const focusSlugs = catalogue.flatMap((sp) => sp.subSpecialties.filter((sub) => re.test(sub.name) || re.test(sub.description ?? '')).map((sub) => sub.slug));
+      const conditionSpecialties = CONDITIONS.filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty);
+      // Best match first: "fever" → General Physician before the Siddha doctor who also treats fever.
+      const byName = catalogue.filter((sp) => re.test(sp.name) || re.test(sp.plural)).map((sp) => sp.slug);
+      specialtyOrder = [...new Set([...byName, ...conditionSpecialties, ...matchedSpecialties])];
+      matchedSpecialties = specialtyOrder;
       filter.$or = [
         { name: re }, { clinicName: re }, { area: re }, { title: re }, { qualification: re },
-        { specialty: { $in: specialtySlugs } },
+        { specialty: { $in: [...new Set([...matchedSpecialties, ...conditionSpecialties])] } },
         { focusAreas: { $in: focusSlugs } },
       ];
     }
 
-    // "Available today" narrows to doctors with an open slot in the window, so the
-    // count and pagination stay correct instead of filtering after the fact.
-    if (availability || mode) {
-      const window = availabilityWindow(availability);
-      const slotMatch: Record<string, unknown> = { startsAt: window, ...bookableSlot() };
-      if (mode) slotMatch.mode = mode;
+    // Availability (and "now") narrows to doctors with a matching open slot, so counts and paging stay right.
+    if (availability || free || sort === 'soonest') {
+      const candidates = await DoctorModel.find(filter, SLOT_FIELDS).lean();
+      await ensureSlots(candidates as never);
+      const slotMatch: Record<string, unknown> = { doctorSlug: { $in: candidates.map((c) => c.slug) }, startsAt: availabilityWindow(availability), ...bookableSlot() };
+      if (mode || availability === 'now') slotMatch.mode = availability === 'now' ? 'video' : mode;
+      if (free) slotMatch.free = true;
       const available = await SlotModel.distinct('doctorSlug', slotMatch);
       filter.slug = { $in: available };
     }
 
-    const [doctors, total] = await Promise.all([
-      DoctorModel.find(filter).sort(SORTS[sort]!).skip((page - 1) * limit).limit(limit).lean(),
-      DoctorModel.countDocuments(filter),
-    ]);
+    let doctors;
+    let total;
+    if (sort === 'soonest') {
+      // Order by the earliest open slot rather than a stored field.
+      const slotMatch: Record<string, unknown> = { doctorSlug: { $in: (filter.slug as { $in: string[] })?.$in ?? [] }, startsAt: availabilityWindow(availability), ...bookableSlot() };
+      if (mode || availability === 'now') slotMatch.mode = availability === 'now' ? 'video' : mode;
+      if (free) slotMatch.free = true;
+      const order = await SlotModel.aggregate<{ _id: string; at: Date }>([{ $match: slotMatch }, { $group: { _id: '$doctorSlug', at: { $min: '$startsAt' } } }, { $sort: { at: 1 } }]);
+      total = order.length;
+      const pageSlugs = order.slice((page - 1) * limit, page * limit).map((o) => o._id);
+      const docs = await DoctorModel.find({ slug: { $in: pageSlugs } }).lean();
+      doctors = pageSlugs.map((s) => docs.find((d) => d.slug === s)!).filter(Boolean);
+    } else if (specialtyOrder.length > 1 && sort === 'relevance') {
+      [doctors, total] = await Promise.all([
+        DoctorModel.aggregate([
+          { $match: filter },
+          { $addFields: { _rank: { $let: { vars: { i: { $indexOfArray: [specialtyOrder, '$specialty'] } }, in: { $cond: [{ $lt: ['$$i', 0] }, 99, '$$i'] } } } } },
+          { $sort: { _rank: 1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+          { $project: { _rank: 0 } },
+        ]),
+        DoctorModel.countDocuments(filter),
+      ]);
+    } else {
+      [doctors, total] = await Promise.all([
+        DoctorModel.find(filter).sort({ ...SORTS[sort]!, slug: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+        DoctorModel.countDocuments(filter),
+      ]);
+    }
 
-    // One aggregate gives every card its "next available" chip without N+1 queries.
+    // Fresh slots for the page, then one aggregate for every card's "next available" chip.
+    await ensureSlots(doctors as never);
     const slugs = doctors.map((d) => d.slug);
     const slotFilter: Record<string, unknown> = { doctorSlug: { $in: slugs }, startsAt: { $gte: new Date() }, ...bookableSlot() };
-    if (mode) slotFilter.mode = mode;
+    if (mode || availability === 'now') slotFilter.mode = availability === 'now' ? 'video' : mode;
+    if (free) slotFilter.free = true;
     const nextSlots = slugs.length
-      ? await SlotModel.aggregate<{ _id: string; startsAt: Date }>([
+      ? await SlotModel.aggregate<{ _id: string; startsAt: Date; mode: string; fee: number; free: boolean; slotId: unknown }>([
           { $match: slotFilter },
           { $sort: { startsAt: 1 } },
-          { $group: { _id: '$doctorSlug', startsAt: { $first: '$startsAt' } } },
+          { $group: { _id: '$doctorSlug', startsAt: { $first: '$startsAt' }, mode: { $first: '$mode' }, fee: { $first: '$fee' }, free: { $first: '$free' }, slotId: { $first: '$_id' } } },
         ])
       : [];
-    const nextBySlug = new Map(nextSlots.map((s) => [s._id, s.startsAt]));
+    const nextBySlug = new Map(nextSlots.map((s) => [s._id, s]));
 
     const facetBase: Record<string, unknown> = { city };
     if (specialty && specialty !== 'doctors') facetBase.specialty = specialty;
@@ -136,22 +247,27 @@ export async function doctorRoutes(app: FastifyInstance) {
       DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: facetBase }, { $unwind: '$languages' }, { $group: { _id: '$languages', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
     ]);
 
-    reply.header('cache-control', CATALOGUE_CACHE);
+    reply.header('cache-control', availability || free ? 'public, max-age=30' : CATALOGUE_CACHE);
     return {
       facets: {
         areas: areaFacet.map((a) => ({ value: a._id, count: a.count })),
         languages: languageFacet.map((l) => ({ value: l._id, count: l.count })),
       },
-      doctors: doctors.map(({ _id, createdAt, updatedAt, ...d }) => ({
-        id: String(_id),
-        ...d,
-        nextSlotAt: nextBySlug.get(d.slug) ?? null,
-      })),
+      doctors: doctors.map((d) => {
+        const next = nextBySlug.get(d.slug);
+        return {
+          ...dto(d),
+          nextSlotAt: next?.startsAt ?? null,
+          nextSlot: next ? { id: String(next.slotId), startsAt: next.startsAt, mode: next.mode, fee: next.fee, free: Boolean(next.free) } : null,
+        };
+      }),
       page,
       limit,
       total,
       pages: Math.max(1, Math.ceil(total / limit)),
       mode: mode ?? null,
+      city,
+      matchedSpecialties,
     };
   });
 
@@ -167,23 +283,26 @@ export async function doctorRoutes(app: FastifyInstance) {
         { $group: { _id: null, average: { $avg: '$rating' }, total: { $sum: 1 } } },
       ]),
       SpecialtyModel.findOne({ slug: doctor.specialty }).lean(),
-      DoctorModel.find({ specialty: doctor.specialty, slug: { $ne: slug } }).sort({ rating: -1 }).limit(3).lean(),
+      DoctorModel.find({ specialty: doctor.specialty, city: doctor.city, slug: { $ne: slug } }).sort({ rating: -1, reviewCount: -1 }).limit(3).lean(),
     ]);
 
-    const { _id, createdAt, updatedAt, ...rest } = doctor;
     const focusNames = new Map((specialtyDoc?.subSpecialties ?? []).map((sub) => [sub.slug, sub.name]));
+    const city = CITY_BY_SLUG.get(doctor.city);
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
       doctor: {
-        id: String(_id),
-        ...rest,
+        ...dto(doctor),
+        cityName: city?.name ?? doctor.city,
         focusAreaNames: (doctor.focusAreas ?? []).map((f) => focusNames.get(f) ?? f),
         services: (specialtyDoc?.subSpecialties ?? []).map((sub) => ({ ...sub, focus: (doctor.focusAreas ?? []).includes(sub.slug) })),
         specialtyName: specialtyDoc?.name ?? doctor.specialty,
+        specialtyPlural: specialtyDoc?.plural ?? doctor.specialty,
+        offersVideo: doctor.schedule?.video !== 'none',
+        // Always computed from the reviews, so every screen shows the same numbers.
         reviewSummary: { average: rating[0] ? Math.round(rating[0].average * 10) / 10 : doctor.rating, total: rating[0]?.total ?? 0 },
       },
       facility: facility ? (({ _id: fid, createdAt: _c, updatedAt: _u, ...f }) => ({ id: String(fid), ...f }))(facility) : null,
-      similar: similar.map(({ _id: sid, createdAt: _c, updatedAt: _u, ...d }) => ({ id: String(sid), ...d })),
+      similar: similar.map(dto),
     };
   });
 
@@ -195,13 +314,17 @@ export async function doctorRoutes(app: FastifyInstance) {
       days: z.coerce.number().int().min(1).max(14).default(7),
     }).parse(request.query);
 
+    const doctor = await DoctorModel.findOne({ slug }, SLOT_FIELDS).lean();
+    if (!doctor) throw notFound('Doctor not found');
+    await ensureSlots([doctor] as never);
+
     const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const filter: Record<string, unknown> = { doctorSlug: slug, startsAt: { $gte: new Date(), $lte: until }, ...bookableSlot() };
     if (mode) filter.mode = mode;
 
-    const slots = await SlotModel.find(filter).sort({ startsAt: 1 }).limit(200).lean();
+    const slots = await SlotModel.find(filter).sort({ startsAt: 1 }).limit(400).lean();
     return {
-      slots: slots.map((s) => ({ id: String(s._id), startsAt: s.startsAt, mode: s.mode, fee: s.fee })),
+      slots: slots.map((s) => ({ id: String(s._id), startsAt: s.startsAt, mode: s.mode, fee: s.fee, free: Boolean(s.free) })),
     };
   });
 }

@@ -7,7 +7,8 @@ const labSchema = new Schema(
     name: { type: String, required: true },
     shortName: { type: String, required: true },
     /** Reference labs run every test in the catalogue; centres run the routine panels. */
-    type: { type: String, enum: ['reference', 'centre'], required: true },
+    type: { type: String, enum: ['reference', 'centre', 'imaging'], required: true },
+    profile: { type: String, default: 'routine' },
     city: { type: String, required: true, default: 'bangalore', index: true },
     area: { type: String, required: true },
     address: { type: String, required: true },

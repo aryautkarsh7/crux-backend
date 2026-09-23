@@ -1,4 +1,5 @@
 /** Patient reviews generated per doctor from specialty-appropriate templates. */
+import { SPECIALTY_BY_SLUG } from './specialties.js';
 
 const AUTHORS = ['Karthik S.', 'Priyanka R.', 'Anil M.', 'Sneha K.', 'Rohit V.', 'Divya P.', 'Manoj B.', 'Aarti J.', 'Suresh N.', 'Meghana T.', 'Farhan A.', 'Lakshmi G.', 'Vinay H.', 'Neha D.', 'Ramesh C.', 'Pallavi S.', 'Abhishek T.', 'Kavitha M.', 'Imran K.', 'Swati L.'];
 
@@ -51,13 +52,30 @@ function rng(seed: number) {
 }
 const hashString = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 11);
 
+/** Specialty-specific lines for the specialties without hand-written ones, built from what they treat. */
+function specialtyLines(specialty: string) {
+  if (BY_SPECIALTY[specialty]) return BY_SPECIALTY[specialty]!;
+  const sp = SPECIALTY_BY_SLUG.get(specialty);
+  if (!sp) return [];
+  const [a, b, c] = sp.conditions.map((x) => x.toLowerCase());
+  return [
+    `Came in for ${a}. The plan was explained step by step and it is working well.`,
+    `Very patient with my questions about ${b}. Didn’t push unnecessary tests.`,
+    `Much better after the treatment for ${c ?? a}. Follow-up on chat was quick.`,
+  ];
+}
+
+function visitedFor(specialty: string) {
+  return VISITED_FOR[specialty] ?? SPECIALTY_BY_SLUG.get(specialty)?.conditions.slice(0, 4).map((c) => c.split(/[,(]/)[0]!.trim()) ?? ['Consultation'];
+}
+
 export function generateReviews(doctors: { slug: string; specialty: string }[]) {
   const now = Date.now();
   return doctors.flatMap((doctor) => {
     const random = rng(hashString(doctor.slug));
     const pick = <T,>(xs: readonly T[]) => xs[Math.floor(random() * xs.length)]!;
-    const pool = [...(BY_SPECIALTY[doctor.specialty] ?? []), ...GENERAL];
-    const count = 6 + Math.floor(random() * 5);
+    const pool = [...specialtyLines(doctor.specialty), ...GENERAL];
+    const count = 6 + Math.floor(random() * 9);
     return Array.from({ length: count }, (_, i) => {
       const roll = random();
       const rating = roll < 0.72 ? 5 : roll < 0.94 ? 4 : 3;
@@ -71,7 +89,7 @@ export function generateReviews(doctors: { slug: string; specialty: string }[]) 
         tags: [pick(TAGS), pick(TAGS)].filter((v, k, a) => a.indexOf(v) === k),
         helpful: Math.floor(random() * 60),
         verified: true,
-        visitedFor: pick(VISITED_FOR[doctor.specialty] ?? ['Consultation']),
+        visitedFor: pick(visitedFor(doctor.specialty)),
         createdAt,
         updatedAt: createdAt,
       };

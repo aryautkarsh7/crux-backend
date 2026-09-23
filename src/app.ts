@@ -9,6 +9,7 @@ import { env } from './config/env.js';
 import { HttpError } from './lib/errors.js';
 import { appointmentRoutes } from './modules/appointments/appointment.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js';
 import { doctorRoutes } from './modules/doctors/doctor.routes.js';
 import { contentRoutes } from './modules/content/content.routes.js';
 import { facilityRoutes } from './modules/facilities/facility.routes.js';
@@ -99,6 +100,7 @@ export async function buildApp() {
   await app.register(contentRoutes, { prefix: '/api/v1' });
   await app.register(triageRoutes, { prefix: '/api/v1' });
   await app.register(searchRoutes, { prefix: '/api/v1' });
+  await app.register(catalogueRoutes, { prefix: '/api/v1' });
   await app.register(meRoutes, { prefix: '/api/v1/me' });
 
   return app;

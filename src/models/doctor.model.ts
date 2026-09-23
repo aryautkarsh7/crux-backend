@@ -25,6 +25,20 @@ const doctorSchema = new Schema(
     photoUrl: { type: String, default: '' },
     about: { type: String, default: '' },
     verified: { type: Boolean, default: true },
+    /** Weekly consulting pattern; slots are generated from it on demand. */
+    schedule: {
+      days: { type: [Number], default: [1, 2, 3, 4, 5, 6] },
+      sessions: { type: [{ start: String, end: String, _id: false }], default: [] },
+      step: { type: Number, default: 30 },
+      video: { type: String, enum: ['none', 'mixed', 'all'], default: 'mixed' },
+    },
+    consultHours: { type: String, default: '' },
+    /** Offers a couple of free video consults each day. */
+    freeVideo: { type: Boolean, default: false, index: true },
+    /** Online round the clock (24x7 video). */
+    instant: { type: Boolean, default: false },
+    /** Slots exist up to this day; later days are generated when someone looks. */
+    slotsThrough: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false },
 );

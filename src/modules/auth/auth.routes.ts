@@ -6,8 +6,14 @@ import { UserModel } from '../../models/user.model.js';
 import { requestOtp, verifyOtp } from './auth.service.js';
 import { ensureDemoLocker } from '../me/demo-locker.js';
 
-const phoneBody = z.object({ phone: z.string() });
-const verifyBody = z.object({ phone: z.string(), code: z.string().trim() });
+const phoneBody = z.object({ phone: z.string(), intent: z.enum(['login', 'register', 'any']).default('any') });
+const registrationBody = z.object({
+  name: z.string().trim().min(2, 'Enter your full name').max(80),
+  email: z.string().trim().email('Enter a valid email').or(z.literal('')).optional(),
+  gender: z.enum(['female', 'male', 'other', '']).optional(),
+  dob: z.coerce.date().max(new Date(), 'Date of birth cannot be in the future').optional(),
+});
+const verifyBody = z.object({ phone: z.string(), code: z.string().trim(), registration: registrationBody.optional() });
 const profileBody = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   email: z.string().trim().email('Enter a valid email').or(z.literal('')).optional(),
@@ -49,10 +55,13 @@ export async function authRoutes(app: FastifyInstance) {
     config: { rateLimit: { max: 5, timeWindow: '10 minutes' } },
     schema: {
       response: {
-        200: { type: 'object', properties: { phone: { type: 'string' }, expiresInSeconds: { type: 'number' }, devCode: { type: 'string' } } },
+        200: { type: 'object', properties: { phone: { type: 'string' }, registered: { type: 'boolean' }, expiresInSeconds: { type: 'number' }, devCode: { type: 'string' } } },
       },
     },
-  }, async (request) => requestOtp(phoneBody.parse(request.body).phone));
+  }, async (request) => {
+    const { phone, intent } = phoneBody.parse(request.body);
+    return requestOtp(phone, intent);
+  });
 
   app.post('/otp/verify', {
     config: { rateLimit: { max: 10, timeWindow: '10 minutes' } },
@@ -60,8 +69,8 @@ export async function authRoutes(app: FastifyInstance) {
       response: { 200: { type: 'object', properties: { token: { type: 'string' }, user: userShape } } },
     },
   }, async (request) => {
-    const { phone, code } = verifyBody.parse(request.body);
-    const verified = await verifyOtp(phone, code);
+    const { phone, code, registration } = verifyBody.parse(request.body);
+    const verified = await verifyOtp(phone, code, registration);
     await ensureDemoLocker(verified._id, verified.phone);
     const user = (await UserModel.findById(verified._id).lean())!;
     const token = await request.server.jwt.sign({ sub: String(user._id), phone: user.phone }, { expiresIn: '30d' });

@@ -9,7 +9,10 @@ const labTestSchema = new Schema(
   {
     slug: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    kind: { type: String, enum: ['package', 'test'], required: true, index: true },
+    kind: { type: String, enum: ['package', 'test', 'scan', 'procedure'], required: true, index: true },
+    /** False for scans and procedures that need a visit to a centre. */
+    homeCollection: { type: Boolean, default: true },
+    department: { type: String, default: '', index: true },
     testsIncluded: { type: Number, required: true },
     fastingHours: { type: String, default: null },
     fastingLabel: { type: String, required: true },
@@ -39,6 +42,8 @@ const labCategorySchema = new Schema(
     name: { type: String, required: true },
     icon: { type: String, default: 'labs' },
     order: { type: Number, default: 0 },
+    /** "concern" (Diabetes, Thyroid…) or "department" (Radiology, Microbiology…). */
+    group: { type: String, enum: ['concern', 'department'], default: 'concern' },
   },
   { versionKey: false },
 );

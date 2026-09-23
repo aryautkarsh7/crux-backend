@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '../../lib/auth.js';
+import { refreshDoctorRatings } from '../../db/catalogue.js';
 import { notFound } from '../../lib/errors.js';
 import { CATALOGUE_CACHE, objectId, pageQuery, paged, toDto } from '../../lib/http.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
@@ -27,7 +28,8 @@ const reviewBody = z.object({
 });
 
 const leadBody = z.object({
-  kind: z.enum(['provider', 'hospital', 'corporate', 'callback', 'newsletter']),
+  kind: z.enum(['provider', 'hospital', 'corporate', 'callback', 'newsletter', 'surgery', 'plus']),
+  surgery: z.string().trim().max(80).default(''),
   name: z.string().trim().max(80).default(''),
   phone: z.string().trim().regex(/^([6-9]\d{9})?$/, 'Enter a valid 10-digit mobile number').default(''),
   email: z.string().trim().email('Enter a valid email').or(z.literal('')).default(''),
@@ -132,6 +134,8 @@ export async function contentRoutes(app: FastifyInstance) {
       { $set: { ...body, author, verified: Boolean(visited) }, $setOnInsert: { doctorSlug: slug, user: request.user.sub, helpful: 0 } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
+    // Profile, cards and review tab all read the same derived numbers.
+    await refreshDoctorRatings([slug]);
     reply.code(201);
     return { review: toDto(review!, true) };
   });

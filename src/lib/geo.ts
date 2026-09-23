@@ -1,3 +1,5 @@
+import { CITIES } from '../db/data/cities.js';
+
 /** Rough centroids for Bengaluru pincodes, used to find the nearest lab and check home-collection reach. */
 const PINCODES: Record<string, { area: string; lat: number; lng: number }> = {
   '560001': { area: 'MG Road', lat: 12.9757, lng: 77.6011 },
@@ -54,15 +56,31 @@ const PINCODES: Record<string, { area: string; lat: number; lng: number }> = {
 
 /** Where distances are measured from when we don't know the patient's pincode. */
 export const DEFAULT_PINCODE = '560038';
-const CITY_CENTRE = { lat: 12.9716, lng: 77.5946 };
 
-export type Place = { pincode: string; area: string; lat: number; lng: number; approximate: boolean };
+export type Place = { pincode: string; area: string; lat: number; lng: number; approximate: boolean; city: string };
 
-/** Bengaluru pincodes resolve to a point; anything outside the city returns null (not serviceable). */
+const LOCALITY_BY_PIN = new Map<string, { city: string; area: string; lat: number; lng: number }>();
+for (const city of CITIES) for (const l of city.localities) if (!LOCALITY_BY_PIN.has(l.pincode)) LOCALITY_BY_PIN.set(l.pincode, { city: city.slug, area: l.name, lat: l.lat, lng: l.lng });
+
+/**
+ * Resolves a pincode in any city we serve to a point. Known locality pincodes are exact; other
+ * pincodes in a served city fall back to the city centre. Anything else returns null (not serviceable).
+ */
 export function locate(pincode: string): Place | null {
-  if (!/^560\d{3}$/.test(pincode)) return null;
-  const known = PINCODES[pincode];
-  return known ? { pincode, ...known, approximate: false } : { pincode, area: 'Bengaluru', ...CITY_CENTRE, approximate: true };
+  if (!/^\d{6}$/.test(pincode)) return null;
+  const legacy = PINCODES[pincode];
+  if (legacy) return { pincode, ...legacy, approximate: false, city: 'bangalore' };
+  const known = LOCALITY_BY_PIN.get(pincode);
+  if (known) return { pincode, area: known.area, lat: known.lat, lng: known.lng, approximate: false, city: known.city };
+  const city = CITIES.find((c) => c.pincodePrefixes.some((p) => pincode.startsWith(p)));
+  return city ? { pincode, area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug } : null;
+}
+
+/** The default "near you" point for a city: its first listed locality. */
+export function cityOrigin(citySlug: string): Place {
+  const city = CITIES.find((c) => c.slug === citySlug) ?? CITIES[0]!;
+  const l = city.localities[0]!;
+  return { pincode: l.pincode, area: l.name, lat: l.lat, lng: l.lng, approximate: false, city: city.slug };
 }
 
 /** Great-circle distance in km, rounded to 0.1. */

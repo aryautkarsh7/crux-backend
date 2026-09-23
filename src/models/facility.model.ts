@@ -6,6 +6,13 @@ const facilitySchema = new Schema(
     name: { type: String, required: true },
     shortName: { type: String, required: true },
     type: { type: String, enum: ['hospital', 'clinic'], required: true, index: true },
+    /** One of the 19 facility types, e.g. "Eye Hospital" — separate from departments. */
+    category: { type: String, default: 'Clinic', index: true },
+    pincode: { type: String, default: '' },
+    geo: { lat: Number, lng: Number },
+    /** Outpatient hours when doctors consult (openHours is when the building is open). */
+    opdHours: { type: String, default: '' },
+    specialties: { type: [String], default: [], index: true },
     city: { type: String, required: true, default: 'bangalore', index: true },
     area: { type: String, required: true },
     address: { type: String, required: true },

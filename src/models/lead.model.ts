@@ -3,7 +3,8 @@ import { Schema, model, type InferSchemaType } from 'mongoose';
 /** Inbound interest: provider sign-ups, callback requests, newsletter, corporate plans. */
 const leadSchema = new Schema(
   {
-    kind: { type: String, enum: ['provider', 'hospital', 'corporate', 'callback', 'newsletter'], required: true, index: true },
+    kind: { type: String, enum: ['provider', 'hospital', 'corporate', 'callback', 'newsletter', 'surgery', 'plus'], required: true, index: true },
+    surgery: { type: String, default: '' },
     name: { type: String, default: '' },
     phone: { type: String, default: '' },
     email: { type: String, default: '' },

@@ -71,17 +71,54 @@ describe('service basics', () => {
 describe('doctors & specialties', () => {
   test('specialties list, with bookable counts per mode', async () => {
     const plain = await call('GET', '/specialties');
-    assert.equal(plain.body.specialties.length, 12);
+    assert.equal(plain.body.specialties.length, 56);
+    assert.equal(plain.body.categories.length, 12);
     const video = await call('GET', '/specialties?mode=video');
     assert.ok(video.body.specialties.every((s: { availableDoctors: number }) => typeof s.availableDoctors === 'number'));
   });
 
-  test('every specialty has at least five doctors', async () => {
+  test('every specialty has doctors in every city', async () => {
     const { body } = await call('GET', '/specialties');
-    for (const s of body.specialties) {
-      const list = await call('GET', `/doctors?specialty=${s.slug}&limit=1`);
-      assert.ok(list.body.total >= 5, `${s.slug} has ${list.body.total}`);
+    for (const s of body.specialties) assert.ok(s.doctorCount >= 2, `${s.slug} has ${s.doctorCount} in Bengaluru`);
+    const mumbai = await call('GET', '/specialties?city=mumbai');
+    for (const s of mumbai.body.specialties) assert.ok(s.doctorCount >= 2, `${s.slug} has ${s.doctorCount} in Mumbai`);
+    // Aliases resolve: /bengaluru and /trichologist are the same pages as /bangalore and /dermatologist.
+    const alias = await call('GET', '/doctors?city=bengaluru&specialty=trichologist&limit=1');
+    const canonical = await call('GET', '/doctors?city=bangalore&specialty=dermatologist&limit=1');
+    assert.equal(alias.body.total, canonical.body.total);
+  });
+
+  test('specialty content is specific to the specialty, city and locality', async () => {
+    const gp = await call('GET', '/specialties/general-physician?city=mumbai');
+    assert.equal(gp.status, 200);
+    assert.equal(gp.body.city.name, 'Mumbai');
+    assert.match(gp.body.intro, /General Physicians in Mumbai/);
+    assert.ok(!JSON.stringify(gp.body).includes('Dermatolog'), 'no dermatology copy on a GP page');
+    assert.ok(gp.body.faqs.length >= 5);
+    assert.ok(gp.body.localities.every((l: { count: number }) => l.count > 0));
+    const local = await call('GET', `/specialties/general-physician?city=mumbai&area=${gp.body.localities[0].slug}`);
+    assert.equal(local.body.locality.slug, gp.body.localities[0].slug);
+    assert.equal(local.body.stats.doctors, gp.body.localities[0].count);
+    assert.equal((await call('GET', '/specialties/general-physician?city=atlantis')).status, 404);
+    const cities = await call('GET', '/cities');
+    assert.ok(cities.body.cities.length >= 20);
+  });
+
+  test('consult now and free consults', async () => {
+    // Every city has a 24x7 online GP, so "now" is never empty.
+    for (const city of ['bangalore', 'patna']) {
+      const now = await call('GET', `/doctors?city=${city}&availability=now&limit=20`);
+      assert.ok(now.body.total >= 1, `${city} has someone online now`);
+      const soon = Date.now() + 61 * 60 * 1000;
+      assert.ok(now.body.doctors.every((d: { nextSlot: { mode: string; startsAt: string } }) => d.nextSlot.mode === 'video' && new Date(d.nextSlot.startsAt).getTime() <= soon));
     }
+    const free = await call('GET', '/doctors?city=mumbai&free=true&limit=20');
+    assert.ok(free.body.total > 0);
+    assert.ok(free.body.doctors.every((d: { freeVideo: boolean; nextSlot: { fee: number; free: boolean } }) => d.freeVideo && d.nextSlot.free && d.nextSlot.fee === 0));
+    const soonest = await call('GET', '/doctors?specialty=dermatologist&sort=soonest&limit=5');
+    const times = soonest.body.doctors.map((d: { nextSlotAt: string }) => new Date(d.nextSlotAt).getTime());
+    assert.ok(times.length > 0);
+    assert.deepEqual(times, [...times].sort((a, b) => a - b));
   });
 
   test('filters narrow results and facets describe the specialty', async () => {
@@ -121,7 +158,10 @@ describe('doctors & specialties', () => {
   test('search matches symptoms, not just names', async () => {
     const acne = await call('GET', '/doctors?q=acne&limit=50');
     assert.ok(acne.body.total > 0);
-    assert.ok(acne.body.doctors.every((d: { specialty: string }) => d.specialty === 'dermatologist'));
+    assert.equal(acne.body.doctors[0].specialty, 'dermatologist');
+    assert.ok(acne.body.doctors.every((d: { specialty: string }) => acne.body.matchedSpecialties.includes(d.specialty)));
+    const fever = await call('GET', '/doctors?q=fever&limit=5');
+    assert.equal(fever.body.doctors[0].specialty, 'general-physician', 'best-matching specialty first');
     const cardio = await call('GET', '/doctors?q=cardiologist&limit=50');
     assert.ok(cardio.body.doctors.every((d: { specialty: string }) => d.specialty === 'cardiologist'));
   });
@@ -197,7 +237,12 @@ describe('pharmacy catalogue', () => {
 describe('labs catalogue', () => {
   test('categories, packages vs tests, detail and collection windows', async () => {
     const cats = await call('GET', '/lab-categories');
-    assert.equal(cats.body.categories.length, 12);
+    assert.ok(cats.body.categories.some((c: { group: string }) => c.group === 'concern'));
+    assert.ok(cats.body.categories.filter((c: { group: string }) => c.group === 'department').length >= 12);
+    const all = await call('GET', '/lab-tests?limit=1');
+    assert.ok(all.body.total >= 250, 'the full diagnostic directory is listed');
+    const scans = await call('GET', '/lab-tests?kind=scan&limit=50');
+    assert.ok(scans.body.total > 0 && scans.body.items.every((t: { homeCollection: boolean }) => t.homeCollection === false));
     const packages = await call('GET', '/lab-tests?kind=package&limit=50');
     assert.ok(packages.body.items.every((t: { kind: string }) => t.kind === 'package'));
     const search = await call('GET', '/lab-tests?q=hba1c');
@@ -215,7 +260,9 @@ describe('labs catalogue', () => {
   test('partner lab directory: distance, filters, profile', async () => {
     const all = await call('GET', '/labs');
     assert.equal(all.status, 200);
-    assert.equal(all.body.total, 11);
+    assert.equal(all.body.total, 13);
+    const delhi = await call('GET', '/labs?city=delhi');
+    assert.ok(delhi.body.total >= 4 && delhi.body.items.every((l: { pincode: string }) => l.pincode.startsWith('11')));
     const km = all.body.items.map((l: { distanceKm: number }) => l.distanceKm);
     assert.deepEqual(km, [...km].sort((a, b) => a - b), 'nearest first');
     assert.equal(all.body.near.area, 'Indiranagar');
@@ -245,9 +292,15 @@ describe('labs catalogue', () => {
     // Adding a reference-only test moves the booking to a reference lab.
     const psa = await call('GET', '/labs/match?pincode=560102&tests=lipid-profile,psa-total');
     assert.equal(psa.body.recommended, 'curxx-diagnostics-koramangala');
-    const outside = await call('GET', '/labs/match?pincode=110001&tests=hba1c');
+    const outside = await call('GET', '/labs/match?pincode=744101&tests=hba1c');
     assert.equal(outside.body.serviceable, false);
-    assert.match(outside.body.reason, /Bengaluru/);
+    assert.match(outside.body.reason, /cities/);
+    const delhi = await call('GET', '/labs/match?pincode=110001&tests=hba1c');
+    assert.equal(delhi.body.serviceable, true, 'other cities have home collection too');
+    const scan = await call('GET', '/lab-tests?kind=scan&limit=1');
+    const visitOnly = await call('GET', `/labs/match?pincode=560102&tests=${scan.body.items[0].slug}`);
+    assert.equal(visitOnly.body.serviceable, false);
+    assert.deepEqual(visitOnly.body.visitOnly, [scan.body.items[0].slug]);
     const visit = await call('GET', '/labs/match?tests=hba1c&mode=lab');
     assert.equal(visit.body.serviceable, true);
 
@@ -285,9 +338,30 @@ describe('content, search & triage', () => {
     assert.equal(bad.status, 400);
   });
 
+  test('conditions, surgeries and autosuggest', async () => {
+    const acne = await call('GET', '/conditions/acne?city=pune');
+    assert.equal(acne.body.specialty.slug, 'dermatologist');
+    assert.equal(acne.body.city.name, 'Pune');
+    assert.ok(acne.body.faqs.length >= 3);
+    const surgeries = await call('GET', '/surgeries?city=patna');
+    assert.ok(surgeries.body.surgeries.length >= 30);
+    const metro = await call('GET', '/surgeries/cataract-surgery?city=mumbai');
+    const tier2 = await call('GET', '/surgeries/cataract-surgery?city=patna');
+    assert.ok(tier2.body.surgery.cost[0] < metro.body.surgery.cost[0], 'tier-2 cities cost less');
+    assert.ok(metro.body.hospitals.length > 0);
+    assert.equal((await call('GET', '/surgeries/nope')).status, 404);
+    const suggest = await call('GET', '/search/suggest?q=fev');
+    assert.equal(suggest.body.specialties[0].slug, 'general-physician');
+    assert.ok(suggest.body.conditions.some((c: { slug: string }) => c.slug === 'fever'));
+    const types = await call('GET', '/facilities?city=delhi&category=eye-hospital');
+    assert.ok(types.body.items.every((f: { category: string }) => f.category === 'Eye Hospital'));
+    assert.equal(types.body.facets.categories.length, 19);
+  });
+
   test('leads need a way to reach the person', async () => {
     assert.equal((await call('POST', '/leads', { body: { kind: 'callback', name: 'A' } })).status, 400);
     assert.equal((await call('POST', '/leads', { body: { kind: 'newsletter', email: 'reader@example.com' } })).status, 201);
+    assert.equal((await call('POST', '/leads', { body: { kind: 'surgery', surgery: 'cataract-surgery', phone: '9876543210', city: 'mumbai' } })).status, 201);
     assert.equal((await call('POST', '/leads', { body: { kind: 'provider', phone: '12345' } })).status, 400);
   });
 });
@@ -301,6 +375,22 @@ describe('auth & profile', () => {
     assert.equal(records.body.records.length, 7);
     const access = await call('GET', '/access', { token });
     assert.equal(access.body.grants.length, 4);
+  });
+
+  test('login and register are separate', async () => {
+    const number = phone();
+    const login = await call('POST', '/auth/otp/request', { body: { phone: number, intent: 'login' } });
+    assert.equal(login.status, 404);
+    assert.equal(login.body.error, 'not_registered');
+    const register = await call('POST', '/auth/otp/request', { body: { phone: number, intent: 'register' } });
+    assert.equal(register.status, 200);
+    const verified = await call('POST', '/auth/otp/verify', { body: { phone: number, code: register.body.devCode, registration: { name: 'Meera Nair', email: 'meera@example.com', gender: 'female', dob: '1992-04-12' } } });
+    assert.equal(verified.body.user.name, 'Meera Nair');
+    assert.equal(verified.body.user.gender, 'female');
+    const again = await call('POST', '/auth/otp/request', { body: { phone: number, intent: 'register' } });
+    assert.equal(again.status, 409);
+    const back = await call('POST', '/auth/otp/request', { body: { phone: number, intent: 'login' } });
+    assert.equal(back.body.registered, true);
   });
 
   test('profile updates validate fields', async () => {
@@ -481,7 +571,9 @@ describe('orders', () => {
     assert.equal((await book({ collectionMode: 'lab', labSlug: 'curxx-collection-point-mg-road', items: [{ slug: 'psa-total' }], pickup: visitSlot })).body.error, 'lab_missing_tests');
     // Home collection needs an address inside Bengaluru.
     assert.equal((await book({ items: [{ slug: 'hba1c' }], pickup: homeSlot })).body.error, 'address_required');
-    assert.equal((await book({ items: [{ slug: 'hba1c' }], address: { ...address, pincode: '110001' }, pickup: homeSlot })).body.error, 'not_serviceable');
+    assert.equal((await book({ items: [{ slug: 'hba1c' }], address: { ...address, pincode: '744101' }, pickup: homeSlot })).body.error, 'not_serviceable');
+    const scan = await call('GET', '/lab-tests?kind=scan&limit=1');
+    assert.equal((await book({ items: [{ slug: scan.body.items[0].slug }], address, pickup: homeSlot })).body.error, 'visit_only');
     // Windows come from the chosen mode.
     assert.equal((await book({ collectionMode: 'lab', labSlug: 'medisure-diagnostics-indiranagar', items: [{ slug: 'hba1c' }], pickup: { date: visitSlot.date, window: '03:00 – 04:00 AM' } })).body.error, 'invalid_window');
   });

@@ -14,6 +14,8 @@ const articleSchema = new Schema(
     keyTakeaways: { type: [String], default: [] },
     tags: { type: [String], default: [] },
     featured: { type: Boolean, default: false },
+    /** Condition this article explains, when it has a condition page. */
+    condition: { type: String, default: '' },
   },
   { timestamps: true, versionKey: false },
 );
