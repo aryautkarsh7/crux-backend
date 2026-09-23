@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { HttpError } from './lib/errors.js';
@@ -31,8 +31,17 @@ export async function buildApp() {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, { origin: env.corsOrigins, credentials: true });
   await app.register(compress, { global: true, threshold: 1024 });
+  // Anonymous GETs are cacheable catalogue reads — the frontend build alone pre-renders ~170 pages from
+  // one address — so they get their own, larger bucket. Signed-in and write traffic keeps the tight limit,
+  // and sensitive routes (OTP, reviews, leads) set stricter limits of their own.
   // The test suite fires hundreds of requests from one address; limits are tested separately.
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute', allowList: env.NODE_ENV === 'test' ? () => true : undefined });
+  const publicRead = (request: FastifyRequest) => request.method === 'GET' && !request.headers.authorization;
+  await app.register(rateLimit, {
+    max: (request) => (publicRead(request) ? 1500 : 120),
+    keyGenerator: (request) => `${request.ip}:${publicRead(request) ? 'read' : 'write'}`,
+    timeWindow: '1 minute',
+    allowList: env.NODE_ENV === 'test' ? () => true : undefined,
+  });
   await app.register(jwt, { secret: env.JWT_SECRET });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
