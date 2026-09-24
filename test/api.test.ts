@@ -112,6 +112,8 @@ describe('doctors & specialties', () => {
       const soon = Date.now() + 61 * 60 * 1000;
       assert.ok(now.body.doctors.every((d: { nextSlot: { mode: string; startsAt: string } }) => d.nextSlot.mode === 'video' && new Date(d.nextSlot.startsAt).getTime() <= soon));
     }
+    const everywhere = await call('GET', '/doctors?city=all&availability=now&specialty=general-physician&limit=50');
+    assert.ok(new Set(everywhere.body.doctors.map((d: { city: string }) => d.city)).size > 1, 'video search spans cities');
     const free = await call('GET', '/doctors?city=mumbai&free=true&limit=20');
     assert.ok(free.body.total > 0);
     assert.ok(free.body.doctors.every((d: { freeVideo: boolean; nextSlot: { fee: number; free: boolean } }) => d.freeVideo && d.nextSlot.free && d.nextSlot.fee === 0));

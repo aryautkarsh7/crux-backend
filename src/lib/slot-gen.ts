@@ -70,18 +70,17 @@ const isDuplicateOnly = (error: unknown) => {
  * Makes sure each doctor has slots for the coming week. Slots are created lazily (only for doctors
  * someone is looking at) so thousands of doctors don't mean hundreds of thousands of idle slots.
  */
-export async function ensureSlots(doctors: SlotSource[], now = new Date()) {
+export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?: number) {
   const today = dayStart(now);
-  const stale = doctors.filter((d) => {
-    const ahead = d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD;
-    return !d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, ahead - 1);
-  });
+  // A query about today only needs today's slots; later days follow when someone opens a profile.
+  const aheadFor = (d: SlotSource) => Math.min(days ?? Infinity, d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD);
+  const stale = doctors.filter((d) => !d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1));
   if (!stale.length) return;
 
   const docs = [];
   const through = new Map<string, Date>();
   for (const doctor of stale) {
-    const ahead = doctor.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD;
+    const ahead = aheadFor(doctor);
     const last = addDays(today, ahead - 1);
     const from = doctor.slotsThrough && dayStart(new Date(doctor.slotsThrough)) >= today ? addDays(dayStart(new Date(doctor.slotsThrough)), 1) : today;
     for (let day = from; day <= last; day = addDays(day, 1)) docs.push(...slotsForDay(doctor, day, now));

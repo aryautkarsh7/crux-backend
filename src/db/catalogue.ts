@@ -37,7 +37,7 @@ import { SpecialtyModel } from '../models/specialty.model.js';
 import { UserModel } from '../models/user.model.js';
 
 /** Bump whenever the data files change; the next server start re-syncs the live database. */
-export const DATA_VERSION = '2026-09-24.4';
+export const DATA_VERSION = '2026-09-24.5';
 
 type Log = (message: string) => void;
 

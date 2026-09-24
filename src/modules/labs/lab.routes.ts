@@ -41,6 +41,7 @@ const labCard = (lab: Awaited<ReturnType<typeof loadLabs>>[number]) => ({
   name: lab.name,
   shortName: lab.shortName,
   type: lab.type,
+  city: lab.city,
   area: lab.area,
   address: lab.address,
   pincode: lab.pincode,
@@ -68,7 +69,7 @@ export async function labRoutes(app: FastifyInstance) {
       LabCategoryModel.find().sort({ order: 1 }).lean(),
       LabTestModel.aggregate<{ _id: string; packages: number; tests: number }>([
         { $unwind: '$categories' },
-        { $group: { _id: '$categories', packages: { $sum: { $cond: [{ $eq: ['$kind', 'package'] }, 1, 0] } }, tests: { $sum: { $cond: [{ $eq: ['$kind', 'test'] }, 1, 0] } } } },
+        { $group: { _id: '$categories', packages: { $sum: { $cond: [{ $eq: ['$kind', 'package'] }, 1, 0] } }, tests: { $sum: { $cond: [{ $ne: ['$kind', 'package'] }, 1, 0] } } } },
       ]),
     ]);
     const bySlug = new Map(counts.map((c) => [c._id, c]));

@@ -27,7 +27,7 @@ const listQuery = z.object({
 });
 
 const SORTS = { distance: { distanceKm: 1 }, rating: { rating: -1 }, reviews: { reviewCount: -1 } } as const;
-const doctorDto = ({ schedule: _s, slotsThrough: _t, ...d }: Record<string, any>) => toDto(d as { _id: unknown });
+const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({ ...toDto(d as { _id: unknown }), offersVideo: schedule?.video !== 'none' });
 
 export async function facilityRoutes(app: FastifyInstance) {
   app.get('/facility-types', async (_request, reply) => {
