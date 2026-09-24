@@ -35,6 +35,8 @@ const labSchema = new Schema(
     equipment: { type: [String], default: [] },
     amenities: { type: [String], default: [] },
     photoUrl: { type: String, default: '' },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );

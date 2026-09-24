@@ -32,6 +32,8 @@ const facilitySchema = new Schema(
     amenities: { type: [String], default: [] },
     insurers: { type: [String], default: [] },
     photoUrl: { type: String, default: '' },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );

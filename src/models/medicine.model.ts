@@ -25,6 +25,8 @@ const medicineSchema = new Schema(
     rating: { type: Number, default: 4.5 },
     reviewCount: { type: Number, default: 0 },
     popularity: { type: Number, default: 0 },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
@@ -41,6 +43,8 @@ const categorySchema = new Schema(
     icon: { type: String, default: 'medication' },
     featured: { type: Boolean, default: false },
     order: { type: Number, default: 0 },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { versionKey: false },
 );

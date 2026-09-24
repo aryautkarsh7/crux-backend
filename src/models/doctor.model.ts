@@ -39,6 +39,8 @@ const doctorSchema = new Schema(
     instant: { type: Boolean, default: false },
     /** Slots exist up to this day; later days are generated when someone looks. */
     slotsThrough: { type: Date, default: null },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );

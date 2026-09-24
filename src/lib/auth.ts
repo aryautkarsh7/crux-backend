@@ -3,8 +3,8 @@ import { unauthorized } from './errors.js';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: { sub: string; phone: string };
-    user: { sub: string; phone: string };
+    payload: { sub: string; phone: string; role?: 'admin' };
+    user: { sub: string; phone: string; role?: 'admin' };
   }
 }
 
@@ -15,4 +15,6 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
   } catch {
     throw unauthorized();
   }
+  // Admin tokens are for the admin API only; they have no patient account behind them.
+  if (request.user.role === 'admin') throw unauthorized('Sign in with a patient account');
 }

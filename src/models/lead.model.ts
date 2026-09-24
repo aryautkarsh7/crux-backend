@@ -13,6 +13,9 @@ const leadSchema = new Schema(
     specialty: { type: String, default: '' },
     message: { type: String, default: '' },
     source: { type: String, default: '' },
+    /** Follow-up state, set by the team in the admin panel. */
+    status: { type: String, enum: ['new', 'contacted', 'converted', 'closed'], default: 'new', index: true },
+    note: { type: String, default: '' },
   },
   { timestamps: true, versionKey: false },
 );

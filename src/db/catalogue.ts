@@ -41,11 +41,19 @@ export const DATA_VERSION = '2026-09-24.5';
 
 type Log = (message: string) => void;
 
-const upsertAll = async (model: { bulkWrite: (ops: any[], opts?: any) => Promise<unknown> }, docs: readonly { slug: string }[]) => {
-  for (let i = 0; i < docs.length; i += 500) {
-    await model.bulkWrite(docs.slice(i, i + 500).map((d) => ({ updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true } })), { ordered: false });
+type Upsertable = { bulkWrite: (ops: any[], opts?: any) => Promise<unknown>; distinct: (field: string, filter: object) => Promise<unknown[]> };
+
+/** Writes the seed docs, leaving alone anything the team created or edited in the admin panel. */
+const upsertAll = async (model: Upsertable, docs: readonly { slug: string }[]) => {
+  const managed = new Set((await model.distinct('slug', { managed: true })) as string[]);
+  const writable = docs.filter((d) => !managed.has(d.slug));
+  for (let i = 0; i < writable.length; i += 500) {
+    await model.bulkWrite(writable.slice(i, i + 500).map((d) => ({ updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true } })), { ordered: false });
   }
 };
+
+/** Seed records that are no longer in the code data — never admin-managed ones. */
+const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true } });
 
 export async function syncCatalogue(log: Log = () => {}) {
   const started = Date.now();
@@ -57,13 +65,13 @@ export async function syncCatalogue(log: Log = () => {}) {
     fromPrice: s.feeRange[0], videoFrom: s.videoRange[0], feeRange: s.feeRange, video: s.video, popular: Boolean(s.popular),
     conditions: s.conditions, keywords: s.keywords, whenToSee: s.whenToSee, related: s.related, subSpecialties: s.subSpecialties,
   })));
-  await SpecialtyModel.deleteMany({ slug: { $nin: SPECIALTIES.map((s) => s.slug) } });
+  await SpecialtyModel.deleteMany(stale(SPECIALTIES.map((s) => s.slug)));
   step('specialties');
 
   // ---- Facilities ----
   const facilities = buildFacilities();
   await upsertAll(FacilityModel, facilities);
-  await FacilityModel.deleteMany({ slug: { $nin: facilities.map((f) => f.slug) } });
+  await FacilityModel.deleteMany(stale(facilities.map((f) => f.slug)));
   step(`facilities ${facilities.length}`);
 
   // ---- Pharmacy ----
@@ -83,7 +91,7 @@ export async function syncCatalogue(log: Log = () => {}) {
   })));
   await upsertAll(LabTestModel, directory.tests);
   const catalogue = await LabTestModel.find({}, { slug: 1, kind: 1, homeCollection: 1, department: 1, price: 1 }).lean();
-  await LabTestModel.deleteMany({ slug: { $nin: catalogue.map((t) => t.slug) } });
+  await LabTestModel.deleteMany(stale(catalogue.map((t) => t.slug)));
   step(`lab tests ${catalogue.length}`);
 
   // ---- Labs: each lab's menu comes from its profile ----
@@ -101,7 +109,7 @@ export async function syncCatalogue(log: Log = () => {}) {
     ...CITIES.filter((c) => c.slug !== 'bangalore').flatMap((c) => buildCityLabs(c).map((l) => ({ ...l, city: c.slug, tests: menu[l.profile] }))),
   ];
   await upsertAll(LabModel, labs);
-  await LabModel.deleteMany({ slug: { $nin: labs.map((l) => l.slug) } });
+  await LabModel.deleteMany(stale(labs.map((l) => l.slug)));
   step(`labs ${labs.length}`);
 
   // ---- Doctors ----
@@ -158,8 +166,9 @@ export async function syncCatalogue(log: Log = () => {}) {
     .map((d) => ({ ...d, photoUrl: nextPortrait(d.gender) }));
   const everyone = [...bangalore, ...roster].map((d) => ({ ...d, verified: true, slotsThrough: null }));
   await upsertAll(DoctorModel, everyone as never);
-  const slugs = everyone.map((d) => d.slug);
-  await DoctorModel.deleteMany({ slug: { $nin: slugs } });
+  await DoctorModel.deleteMany(stale(everyone.map((d) => d.slug)));
+  // Admin-added doctors keep their slots too.
+  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', { managed: true })) as string[])];
   step(`doctors ${everyone.length}`);
 
   // ---- Slots: schedules may have changed, so clear unbooked future slots; they regenerate on demand ----
@@ -168,7 +177,7 @@ export async function syncCatalogue(log: Log = () => {}) {
   step('slots reset');
 
   // ---- Reviews: regenerate seeded ones, keep patient-written ones, then derive every count from them ----
-  await ReviewModel.deleteMany({ user: { $exists: false } });
+  await ReviewModel.deleteMany({ user: { $exists: false }, managed: { $ne: true } });
   const seeded = generateReviews(everyone.map((d) => ({ slug: d.slug, specialty: d.specialty })));
   for (let i = 0; i < seeded.length; i += 2000) await ReviewModel.insertMany(seeded.slice(i, i + 2000), { ordered: false });
   await refreshDoctorRatings();

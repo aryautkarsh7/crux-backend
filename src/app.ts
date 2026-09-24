@@ -7,6 +7,7 @@ import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { HttpError } from './lib/errors.js';
+import { adminRoutes } from './modules/admin/admin.routes.js';
 import { appointmentRoutes } from './modules/appointments/appointment.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js';
@@ -102,6 +103,7 @@ export async function buildApp() {
   await app.register(searchRoutes, { prefix: '/api/v1' });
   await app.register(catalogueRoutes, { prefix: '/api/v1' });
   await app.register(meRoutes, { prefix: '/api/v1/me' });
+  await app.register(adminRoutes, { prefix: '/api/v1/admin' });
 
   return app;
 }

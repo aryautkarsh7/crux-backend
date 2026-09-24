@@ -12,7 +12,7 @@
     "start": "node dist/server.js",
     "seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 tsx src/db/seed.ts && NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 tsx --test test/*.test.ts"
+    "test": "NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 tsx src/db/seed.ts && NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

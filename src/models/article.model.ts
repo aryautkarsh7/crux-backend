@@ -16,6 +16,8 @@ const articleSchema = new Schema(
     featured: { type: Boolean, default: false },
     /** Condition this article explains, when it has a condition page. */
     condition: { type: String, default: '' },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );

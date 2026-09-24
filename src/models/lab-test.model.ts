@@ -27,6 +27,8 @@ const labTestSchema = new Schema(
     categories: { type: [String], default: [], index: true },
     parameterGroups: { type: [parameterGroupSchema], default: [] },
     popularity: { type: Number, default: 0 },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
@@ -44,6 +46,8 @@ const labCategorySchema = new Schema(
     order: { type: Number, default: 0 },
     /** "concern" (Diabetes, Thyroid…) or "department" (Radiology, Microbiology…). */
     group: { type: String, enum: ['concern', 'department'], default: 'concern' },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { versionKey: false },
 );

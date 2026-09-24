@@ -28,6 +28,8 @@ const specialtySchema = new Schema(
     keywords: { type: String, default: '' },
     whenToSee: { type: [String], default: [] },
     related: { type: [String], default: [] },
+    /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
+    managed: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
