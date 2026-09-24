@@ -228,7 +228,7 @@ async function requireAdmin(request: FastifyRequest, _reply: FastifyReply) {
 export async function adminRoutes(app: FastifyInstance) {
   app.post('/auth/login', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request) => {
     const { email, password } = z.object({ email: z.string().trim().toLowerCase(), password: z.string() }).parse(request.body);
-    if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) throw new HttpError(503, 'Admin sign-in is not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD on the server.', 'admin_disabled');
+    if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) throw new HttpError(503, `Admin sign-in is not configured: ${env.adminProblem}`, 'admin_disabled');
     // Compare both, always, so timing doesn't reveal which one was wrong.
     const ok = same(email, env.ADMIN_EMAIL.toLowerCase()) && same(password, env.ADMIN_PASSWORD);
     if (!ok) throw unauthorized('Wrong email or password');
