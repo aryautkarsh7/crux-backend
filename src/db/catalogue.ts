@@ -7,6 +7,7 @@
 import { ARTICLE_CATEGORIES, ARTICLES } from './data/articles.js';
 import { DOCTORS, FOCUS_AREAS } from './data/bangalore-doctors.js';
 import { CITIES } from './data/cities.js';
+import { CONDITIONS } from './data/conditions.js';
 import { buildConditionArticles } from './data/condition-articles.js';
 import { DEPARTMENTS, buildDirectory } from './data/diagnostic-directory.js';
 import { buildRoster, scheduleForExisting } from './data/doctor-network.js';
@@ -17,9 +18,13 @@ import { BANGALORE_IMAGING, BASIC_TESTS, LABS, REFERENCE_ONLY, buildCityLabs, ty
 import { MEDICINES, MEDICINE_CATEGORIES } from './data/medicines.js';
 import { FEMALE_PORTRAITS, MALE_PORTRAITS } from './data/portraits.js';
 import { generateReviews } from './data/reviews.js';
+import * as SITE from './data/site-content.js';
 import { SPECIALTIES } from './data/specialties.js';
+import { SURGERIES, SURGERY_CATEGORIES } from './data/surgeries.js';
+import { SURGERY_CATEGORIES_SLUG, reloadCatalogue } from '../lib/catalogue-store.js';
 import { AccessGrantModel } from '../models/access-grant.model.js';
 import { AppointmentModel } from '../models/appointment.model.js';
+import { CityModel, ConditionModel, SurgeryModel } from '../models/catalogue.model.js';
 import { ArticleModel } from '../models/article.model.js';
 import { DoctorModel } from '../models/doctor.model.js';
 import { FacilityModel } from '../models/facility.model.js';
@@ -33,11 +38,12 @@ import { MetaModel } from '../models/meta.model.js';
 import { OrderModel } from '../models/order.model.js';
 import { ReviewModel } from '../models/review.model.js';
 import { SlotModel } from '../models/slot.model.js';
+import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../models/site.model.js';
 import { SpecialtyModel } from '../models/specialty.model.js';
 import { UserModel } from '../models/user.model.js';
 
 /** Bump whenever the data files change; the next server start re-syncs the live database. */
-export const DATA_VERSION = '2026-09-24.5';
+export const DATA_VERSION = '2026-09-25.1';
 
 type Log = (message: string) => void;
 
@@ -60,13 +66,59 @@ export async function syncCatalogue(log: Log = () => {}) {
   const step = (m: string) => log(`[catalogue] ${m} (${Math.round((Date.now() - started) / 100) / 10}s)`);
 
   // ---- Specialties ----
-  await upsertAll(SpecialtyModel, SPECIALTIES.map((s) => ({
+  await upsertAll(SpecialtyModel, SPECIALTIES.map((s, order) => ({
+    order, homeOrder: SITE.HOME_SPECIALTIES.indexOf(s.slug) + 1,
     slug: s.slug, name: s.name, plural: s.plural, icon: s.icon, category: s.category, description: s.description,
     fromPrice: s.feeRange[0], videoFrom: s.videoRange[0], feeRange: s.feeRange, video: s.video, popular: Boolean(s.popular),
     conditions: s.conditions, keywords: s.keywords, whenToSee: s.whenToSee, related: s.related, subSpecialties: s.subSpecialties,
   })));
   await SpecialtyModel.deleteMany(stale(SPECIALTIES.map((s) => s.slug)));
   step('specialties');
+
+  // ---- Cities, conditions, surgeries (their slugs are URLs) ----
+  const rank = (list: string[], slug: string) => list.indexOf(slug) + 1;
+  await upsertAll(CityModel, CITIES.map((c, order) => ({ ...c, order, popularOrder: rank(SITE.POPULAR_CITIES, c.slug) })));
+  await CityModel.deleteMany(stale(CITIES.map((c) => c.slug)));
+  await upsertAll(ConditionModel, CONDITIONS.map((c, order) => ({ ...c, popular: c.popular ?? '', order, popularOrder: rank(SITE.POPULAR_CONDITIONS, c.slug) })));
+  await ConditionModel.deleteMany(stale(CONDITIONS.map((c) => c.slug)));
+  await upsertAll(SurgeryModel, SURGERIES.map((s, order) => ({ ...s, popular: Boolean(s.popular), order })));
+  await SurgeryModel.deleteMany(stale(SURGERIES.map((s) => s.slug)));
+  step('cities, conditions, surgeries');
+
+  // ---- Website content ----
+  const section = (slug: string, page: string, sectionKey: string, label: string, items: unknown[], extra: { title?: string; intro?: string } = {}) =>
+    ({ slug, page, section: sectionKey, label, items, title: extra.title ?? '', intro: extra.intro ?? '', published: true });
+  const content = [
+    section('home-faqs', 'home', 'faqs', 'Homepage FAQs', SITE.HOME_FAQS, { title: 'Frequently Asked Questions', intro: 'Booking, prescriptions, refunds and health records — the questions patients ask us most.' }),
+    section('home-bands', 'home', 'bands', 'Homepage feature sections (spec 2, 5, 6, 7)', SITE.HOME_BANDS),
+    section('home-services', 'home', 'services', 'Homepage care ecosystem cards', SITE.HOME_SERVICES),
+    section('home-how-it-works', 'home', 'how-it-works', 'How Curxx Works steps', SITE.HOME_HOW_IT_WORKS),
+    section('shared-partner-sections', 'shared', 'partner-sections', 'Partner programmes (homepage and Partner With Us)', SITE.PARTNER_SECTIONS),
+    section('shared-trust-badges', 'shared', 'trust-badges', 'Trust & compliance badges', SITE.TRUST_BADGES),
+    section('curxx-plus-benefits', 'curxx-plus', 'benefits', 'Curxx Plus benefits', SITE.PLUS_BENEFITS),
+    section('curxx-plus-faqs', 'curxx-plus', 'faqs', 'Curxx Plus FAQs', SITE.PLUS_FAQS, { title: 'Curxx Plus: Frequently Asked Questions' }),
+    section('for-providers-faqs', 'for-providers', 'faqs', 'For Providers FAQs', SITE.PROVIDER_FAQS, { title: 'Frequently Asked Questions' }),
+    section('lab-tests-trending', 'lab-tests', 'trending', 'Lab tests: trending searches', SITE.LAB_TRENDING_SEARCHES),
+    section('lab-tests-symptoms', 'lab-tests', 'symptoms', 'Lab tests: shop by symptom', SITE.LAB_SYMPTOMS),
+    section('medicines-popular-searches', 'medicines', 'popular-searches', 'Medicines: popular searches', SITE.MEDICINE_POPULAR_SEARCHES),
+    section('medicines-trust', 'medicines', 'trust', 'Medicines: trust strip', SITE.MEDICINE_TRUST),
+    ...Object.entries(SITE.LEGAL_PAGES).map(([page, legal]) => section(`${page}-policy`, page, 'policy', `${legal.title} (legal)`, legal.sections, { title: legal.title, intro: legal.intro })),
+    section(SURGERY_CATEGORIES_SLUG, 'catalogue', 'surgery-categories', 'Surgery categories (order on the Surgeries page)', SURGERY_CATEGORIES),
+  ].map((c, order) => ({ ...c, order }));
+  await upsertAll(ContentModel, content);
+  await ContentModel.deleteMany(stale(content.map((c) => c.slug)));
+  await upsertAll(SiteSettingModel, SITE.SITE_SETTINGS);
+  await SiteSettingModel.deleteMany(stale(SITE.SITE_SETTINGS.map((s) => s.slug)));
+  const testimonials = SITE.TESTIMONIALS.map((t, order) => ({ badge: { icon: '', label: '' }, doctorSlug: '', ...t, order, published: true }));
+  await upsertAll(TestimonialModel, testimonials);
+  await TestimonialModel.deleteMany(stale(testimonials.map((t) => t.slug)));
+  const plans = [
+    ...SITE.PLUS_PLANS.map((p, order) => ({ slug: p.id, audience: 'plus', name: p.name, tagline: '', price: p.price, period: 'year', members: p.members, highlight: p.highlight, badge: p.highlight ? 'Most popular' : '', perks: p.perks, excluded: [], ctaLabel: `Choose ${p.name}`, order, published: true })),
+    ...SITE.PROVIDER_PLANS.map(({ id, ...p }, order) => ({ slug: id, audience: 'provider', members: '', ...p, order, published: true })),
+  ];
+  await upsertAll(PlanModel, plans);
+  await PlanModel.deleteMany(stale(plans.map((p) => p.slug)));
+  step('website content');
 
   // ---- Facilities ----
   const facilities = buildFacilities();
@@ -196,9 +248,10 @@ export async function syncCatalogue(log: Log = () => {}) {
   step(`articles ${ARTICLES.length + conditionArticles.length}`);
 
   await Promise.all(
-    [SpecialtyModel, DoctorModel, SlotModel, FacilityModel, MedicineModel, MedicineCategoryModel, LabTestModel, LabCategoryModel, LabModel, ArticleModel, ReviewModel, OrderModel, HealthRecordModel, AccessGrantModel, AppointmentModel, MessageModel, LeadModel, UserModel].map((m) => (m as { syncIndexes: () => Promise<unknown> }).syncIndexes()),
+    [CityModel, ConditionModel, SurgeryModel, ContentModel, SiteSettingModel, TestimonialModel, PlanModel, SpecialtyModel, DoctorModel, SlotModel, FacilityModel, MedicineModel, MedicineCategoryModel, LabTestModel, LabCategoryModel, LabModel, ArticleModel, ReviewModel, OrderModel, HealthRecordModel, AccessGrantModel, AppointmentModel, MessageModel, LeadModel, UserModel].map((m) => (m as { syncIndexes: () => Promise<unknown> }).syncIndexes()),
   );
   step('indexes');
+  await reloadCatalogue();
   return { categories: ARTICLE_CATEGORIES.length };
 }
 

@@ -1,6 +1,5 @@
-import { CITIES, type City } from '../../db/data/cities.js';
-import { CONDITIONS } from '../../db/data/conditions.js';
-import { SURGERIES } from '../../db/data/surgeries.js';
+import type { City } from '../../db/data/cities.js';
+import { cities as allCities, conditions as allConditions, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
 import { SpecialtyModel, type Specialty } from '../../models/specialty.model.js';
@@ -109,7 +108,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     answer: `Choose a ${name} from the list, pick a date and time on their profile, and confirm with your mobile number. You get an instant confirmation by SMS and can reschedule or cancel from My Appointments.`,
   });
 
-  const otherCities = CITIES.filter((c) => c.slug !== city.slug && (byCity.get(c.slug) ?? 0) > 0)
+  const otherCities = allCities().filter((c) => c.slug !== city.slug && (byCity.get(c.slug) ?? 0) > 0)
     .map((c) => ({ slug: c.slug, name: c.name, count: byCity.get(c.slug) ?? 0 }));
 
   return {
@@ -148,7 +147,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     localities,
     otherCities,
     related: relatedDocs.map((r) => ({ slug: r.slug, name: r.name, plural: r.plural, icon: r.icon })),
-    relatedConditions: CONDITIONS.filter((c) => c.specialty === specialty.slug).map((c) => ({ slug: c.slug, name: c.name })),
-    surgeries: SURGERIES.filter((s) => s.specialty === specialty.slug).map((s) => ({ slug: s.slug, name: s.name })),
+    relatedConditions: allConditions().filter((c) => c.specialty === specialty.slug).map((c) => ({ slug: c.slug, name: c.name })),
+    surgeries: allSurgeries().filter((s) => s.specialty === specialty.slug).map((s) => ({ slug: s.slug, name: s.name })),
   };
 }

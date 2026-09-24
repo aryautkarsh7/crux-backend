@@ -24,6 +24,10 @@ const specialtySchema = new Schema(
     feeRange: { type: [Number], default: [] },
     video: { type: Boolean, default: true },
     popular: { type: Boolean, default: false },
+    /** Position among the 12 homepage specialty tiles (1 = first); 0 = not on the homepage. */
+    homeOrder: { type: Number, default: 0 },
+    /** Listing order within its category. */
+    order: { type: Number, default: 999 },
     conditions: { type: [String], default: [] },
     keywords: { type: String, default: '' },
     whenToSee: { type: [String], default: [] },

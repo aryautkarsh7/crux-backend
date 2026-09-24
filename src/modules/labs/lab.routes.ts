@@ -6,7 +6,7 @@ import { LabCategoryModel, LabTestModel } from '../../models/lab-test.model.js';
 import { LabModel } from '../../models/lab.model.js';
 import { distanceKm, locate } from '../../lib/geo.js';
 import { DEFAULT_LAB, collectionAvailability, eligibleLabs, fit, loadLabs, origin, visitOnly } from './lab-network.js';
-import { CITIES } from '../../db/data/cities.js';
+import { cities as allCities } from '../../lib/catalogue-store.js';
 
 const listQuery = z.object({
   category: z.string().trim().min(1).optional(),
@@ -132,7 +132,7 @@ export async function labRoutes(app: FastifyInstance) {
     const q = labListQuery.parse(request.query);
     // A pincode from another city shouldn't measure distances to this city's labs.
     const located = origin(q.pincode, q.city);
-    const place = located.city === (CITIES.find((c) => c.slug === q.city || c.aliases.includes(q.city))?.slug ?? q.city) ? located : origin(undefined, q.city);
+    const place = located.city === (allCities().find((c) => c.slug === q.city || c.aliases.includes(q.city))?.slug ?? q.city) ? located : origin(undefined, q.city);
     const all = await loadLabs(q.city);
     const needle = q.q?.toLowerCase();
     const rows = all
@@ -175,7 +175,7 @@ export async function labRoutes(app: FastifyInstance) {
 
     let reason: string | null = null;
     if (mode === 'home' && atCentre.length) reason = `${atCentre.map((t) => t.name).join(', ')} ${atCentre.length > 1 ? 'need' : 'needs'} a visit to the centre — it can’t be done at home. Choose “Visit a lab” to book it.`;
-    else if (mode === 'home' && pincode && !place) reason = `Home collection isn’t available at ${pincode} yet — we cover ${CITIES.length} cities including Bengaluru, Mumbai, Delhi, Hyderabad and Chennai. You can visit a partner lab instead.`;
+    else if (mode === 'home' && pincode && !place) reason = `Home collection isn’t available at ${pincode} yet — we cover ${allCities().length} cities including Bengaluru, Mumbai, Delhi, Hyderabad and Chennai. You can visit a partner lab instead.`;
     else if (mode === 'home' && place && !eligible.length) reason = `No partner lab collects at ${place.area} (${place.pincode}) for all the tests in this booking. Visit a lab, or remove the specialised test.`;
 
     reply.header('cache-control', 'no-store');

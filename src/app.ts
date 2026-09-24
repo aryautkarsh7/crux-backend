@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
+import { ensureCatalogueFresh } from './lib/catalogue-store.js';
 import { HttpError } from './lib/errors.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { appointmentRoutes } from './modules/appointments/appointment.routes.js';
@@ -20,6 +21,7 @@ import { orderRoutes } from './modules/orders/order.routes.js';
 import { pharmacyRoutes } from './modules/pharmacy/pharmacy.routes.js';
 import { recordRoutes } from './modules/records/record.routes.js';
 import { searchRoutes } from './modules/search/search.routes.js';
+import { siteRoutes } from './modules/site/site.routes.js';
 import { triageRoutes } from './modules/triage/triage.routes.js';
 
 export async function buildApp() {
@@ -66,6 +68,11 @@ export async function buildApp() {
     return reply.status(500).send({ error: 'server_error', message: 'Something went wrong' });
   });
 
+  // Cities, conditions and surgeries are edited in the admin panel; keep the in-memory copy current.
+  app.addHook('onRequest', async (request) => {
+    if (request.url.startsWith('/api/')) await ensureCatalogueFresh();
+  });
+
   app.get('/health', async () => ({ status: 'ok', uptime: Math.round(process.uptime()) }));
 
   // Root index: this is an API, so say so rather than returning a bare 404.
@@ -82,6 +89,7 @@ export async function buildApp() {
       labs: ['GET /lab-categories', 'GET /lab-tests', 'GET /lab-tests/:slug', 'GET /lab-collection-slots'],
       records: ['GET /records', 'GET /records/:id', 'POST /records', 'DELETE /records/:id', 'GET /access', 'POST /access', 'PATCH /access/:id/revoke'],
       account: ['GET /me/saved', 'PUT|DELETE /me/saved/:kind/:slug', 'GET|POST /me/addresses', 'PATCH /me/addresses/:id/default', 'DELETE /me/addresses/:id', 'GET /me/notifications', 'GET /me/summary'],
+      site: ['GET /site/settings', 'GET /site/stats', 'GET /content/:page', 'GET /testimonials?audience=', 'GET /plans?audience=', 'GET /catalogue/routing'],
       content: ['GET /articles', 'GET /articles/:slug', 'POST /doctors/:slug/reviews', 'POST /reviews/:id/helpful', 'POST /leads', 'POST /triage'],
     },
   }));
@@ -102,6 +110,7 @@ export async function buildApp() {
   await app.register(triageRoutes, { prefix: '/api/v1' });
   await app.register(searchRoutes, { prefix: '/api/v1' });
   await app.register(catalogueRoutes, { prefix: '/api/v1' });
+  await app.register(siteRoutes, { prefix: '/api/v1' });
   await app.register(meRoutes, { prefix: '/api/v1/me' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
 

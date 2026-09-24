@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { resolveCitySlug } from '../../db/data/cities.js';
+import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { ensureSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { toDto } from '../../lib/http.js';

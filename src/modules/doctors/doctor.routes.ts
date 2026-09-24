@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CITIES, CITY_BY_SLUG, resolveCitySlug } from '../../db/data/cities.js';
-import { CONDITIONS } from '../../db/data/conditions.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
+import { cities as allCities, cityBySlug, conditions as allConditions, resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
 import { ensureSlots } from '../../lib/slot-gen.js';
@@ -76,14 +75,14 @@ export async function doctorRoutes(app: FastifyInstance) {
     const byCity = new Map(counts.map((c) => [c._id, c.count]));
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
-      cities: CITIES.map((c) => ({ slug: c.slug, name: c.name, state: c.state, tier: c.tier, doctorCount: byCity.get(c.slug) ?? 0, localities: c.localities.map((l) => ({ slug: l.slug, name: l.name, pincode: l.pincode })) })),
+      cities: allCities().map((c) => ({ slug: c.slug, name: c.name, state: c.state, tier: c.tier, doctorCount: byCity.get(c.slug) ?? 0, localities: c.localities.map((l) => ({ slug: l.slug, name: l.name, pincode: l.pincode })) })),
     };
   });
 
   app.get('/cities/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
     const canonical = resolveCitySlug(slug);
-    const city = canonical ? CITY_BY_SLUG.get(canonical) : undefined;
+    const city = canonical ? cityBySlug(canonical) : undefined;
     if (!city) throw notFound('We don’t serve this city yet');
     const [areas, facilities] = await Promise.all([
       DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { city: city.slug } }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
@@ -115,7 +114,7 @@ export async function doctorRoutes(app: FastifyInstance) {
     const bySpecialty = new Map(counts.map((c) => [c._id, c]));
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
-      categories: SPECIALTY_CATEGORIES,
+      categories: [...new Set([...SPECIALTY_CATEGORIES, ...specialties.map((s) => s.category)])],
       specialties: specialties.map(({ _id, createdAt: _c, updatedAt: _u, keywords: _k, ...s }) => ({
         ...s,
         doctorCount: bySpecialty.get(s.slug)?.count ?? 0,
@@ -130,7 +129,7 @@ export async function doctorRoutes(app: FastifyInstance) {
     const { slug: raw } = z.object({ slug: z.string() }).parse(request.params);
     const { city: rawCity, area } = z.object({ city: z.string().default('bangalore'), area: z.string().optional() }).parse(request.query);
     const slug = resolveSpecialtySlug(raw)!;
-    const city = CITY_BY_SLUG.get(resolveCitySlug(rawCity) ?? '');
+    const city = cityBySlug(resolveCitySlug(rawCity) ?? '');
     if (!city) throw notFound('We don’t serve this city yet');
     const specialty = await SpecialtyModel.findOne({ slug }).lean();
     if (!specialty) throw notFound('Specialty not found');
@@ -175,7 +174,7 @@ export async function doctorRoutes(app: FastifyInstance) {
       };
       matchedSpecialties = catalogue.filter((sp) => re.test(sp.name) || re.test(sp.plural) || sp.conditions?.some((c) => re.test(c)) || hitsKeywords(sp.keywords)).map((sp) => sp.slug);
       const focusSlugs = catalogue.flatMap((sp) => sp.subSpecialties.filter((sub) => re.test(sub.name) || re.test(sub.description ?? '')).map((sub) => sub.slug));
-      const conditionSpecialties = CONDITIONS.filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty);
+      const conditionSpecialties = allConditions().filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty);
       // Best match first: "fever" → General Physician before the Siddha doctor who also treats fever.
       const byName = catalogue.filter((sp) => re.test(sp.name) || re.test(sp.plural)).map((sp) => sp.slug);
       specialtyOrder = [...new Set([...byName, ...conditionSpecialties, ...matchedSpecialties])];
@@ -291,7 +290,7 @@ export async function doctorRoutes(app: FastifyInstance) {
     ]);
 
     const focusNames = new Map((specialtyDoc?.subSpecialties ?? []).map((sub) => [sub.slug, sub.name]));
-    const city = CITY_BY_SLUG.get(doctor.city);
+    const city = cityBySlug(doctor.city);
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
       doctor: {

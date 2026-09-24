@@ -32,6 +32,20 @@ downloaded once and started automatically, storing data in `.data/mongo`. For pr
 | POST | `/api/v1/appointments` | Bearer | Book a held or open slot |
 | GET | `/api/v1/appointments` | Bearer | Your appointments |
 | PATCH | `/api/v1/appointments/:id/cancel` | Bearer | Cancel and release the slot |
+| GET | `/api/v1/site/settings` | – | Editable claims, links and images, by key |
+| GET | `/api/v1/site/stats` | – | Live counts (doctors, clinics, NABH, labs, tests, cities, average rating…) |
+| GET | `/api/v1/content/:page[,page]` | – | Editable page sections (FAQs, bands, cards, legal copy), keyed `page/section` |
+| GET | `/api/v1/testimonials?audience=patient\|provider` | – | Published testimonials |
+| GET | `/api/v1/plans?audience=plus\|provider` | – | Curxx Plus and provider plans |
+| GET | `/api/v1/catalogue/routing` | – | Cities, specialties, conditions, surgeries, facility types for website routing |
+
+## Editable website data
+
+Cities, conditions, surgeries, site settings, page content, testimonials and plans live in MongoDB and are
+edited in the admin panel. `db/data/*.ts` holds their seed copies: `syncCatalogue` upserts them on every
+`DATA_VERSION` bump, skipping records flagged `managed` (created or edited in the admin). Routes read
+cities, conditions and surgeries through `lib/catalogue-store.ts`, an in-memory copy reloaded every minute
+and immediately after an admin edit.
 
 ## Sign-in
 

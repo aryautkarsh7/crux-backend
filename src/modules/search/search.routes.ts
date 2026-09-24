@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { resolveCitySlug } from '../../db/data/cities.js';
-import { CONDITIONS } from '../../db/data/conditions.js';
+import { conditions as allConditions, resolveCitySlug } from '../../lib/catalogue-store.js';
 import { escapeRegex, toDto } from '../../lib/http.js';
 import { ArticleModel } from '../../models/article.model.js';
 import { DoctorModel } from '../../models/doctor.model.js';
@@ -26,7 +25,7 @@ export async function searchRoutes(app: FastifyInstance) {
       }
     };
     // "fever" finds the General Physician even though no specialty is called that.
-    const conditionSpecialties = new Set(CONDITIONS.filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty));
+    const conditionSpecialties = new Set(allConditions().filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty));
     const specialties = catalogue.filter((s) => re.test(s.name) || re.test(s.plural) || s.subSpecialties.some((sub) => re.test(sub.name)) || conditionSpecialties.has(s.slug) || keywordHit(s.keywords));
     const focusSlugs = catalogue.flatMap((s) => s.subSpecialties.filter((sub) => re.test(sub.name) || re.test(sub.description ?? '')).map((sub) => sub.slug));
 
@@ -43,7 +42,7 @@ export async function searchRoutes(app: FastifyInstance) {
       q,
       city,
       specialties: specialties.slice(0, 5).map(({ _id, subSpecialties: _s, conditions: _c, keywords: _k, ...s }) => s),
-      conditions: CONDITIONS.filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).slice(0, 4).map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty, summary: c.summary })),
+      conditions: allConditions().filter((c) => re.test(c.name) || c.symptoms.some((s) => re.test(s))).slice(0, 4).map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty, summary: c.summary })),
       doctors: doctors.map(({ schedule: _s, slotsThrough: _t, ...d }) => toDto(d)),
       medicines: medicines.map((m) => toDto(m)),
       labTests: labTests.map((t) => toDto(t)),

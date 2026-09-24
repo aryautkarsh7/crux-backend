@@ -1,9 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CITIES, CITY_BY_SLUG, resolveCitySlug } from '../../db/data/cities.js';
-import { CONDITIONS, CONDITION_BY_SLUG } from '../../db/data/conditions.js';
 import { SPECIALTY_ALIASES } from '../../db/data/specialties.js';
-import { SURGERIES, SURGERY_BY_SLUG, SURGERY_CATEGORIES } from '../../db/data/surgeries.js';
+import { cities as allCities, cityBySlug, conditionBySlug, conditions as allConditions, resolveCitySlug, surgeries as allSurgeries, surgeryBySlug, surgeryCategories, type ConditionRecord, type SurgeryRecord } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { CATALOGUE_CACHE, escapeRegex, toDto } from '../../lib/http.js';
 import { ArticleModel } from '../../models/article.model.js';
@@ -14,20 +12,20 @@ import { SpecialtyModel } from '../../models/specialty.model.js';
 
 const cityQuery = z.object({ city: z.string().default('bangalore') });
 const cityOf = (raw: string) => {
-  const city = CITY_BY_SLUG.get(resolveCitySlug(raw) ?? '');
+  const city = cityBySlug(resolveCitySlug(raw) ?? '');
   if (!city) throw notFound('We don’t serve this city yet');
   return city;
 };
 
 /** Tier-2 cities are about 15% cheaper than metros for the same procedure. */
-const cityCost = (cost: [number, number], tier: number): [number, number] => {
+const cityCost = (cost: number[], tier: number): [number, number] => {
   const f = tier === 1 ? 1 : 0.85;
   const round = (n: number) => Math.round((n * f) / 500) * 500;
-  return [round(cost[0]), round(cost[1])];
+  return [round(cost[0] ?? 0), round(cost[1] ?? 0)];
 };
 
-const conditionSummary = (c: (typeof CONDITIONS)[number]) => ({ slug: c.slug, name: c.name, specialty: c.specialty, summary: c.summary, popular: c.popular ?? null });
-const surgerySummary = (s: (typeof SURGERIES)[number], tier = 1) => ({
+const conditionSummary = (c: ConditionRecord) => ({ slug: c.slug, name: c.name, specialty: c.specialty, summary: c.summary, popular: c.popular ?? null });
+const surgerySummary = (s: SurgeryRecord, tier = 1) => ({
   slug: s.slug,
   name: s.name,
   category: s.category,
@@ -41,17 +39,17 @@ const surgerySummary = (s: (typeof SURGERIES)[number], tier = 1) => ({
   insurance: s.insurance,
 });
 
-/** Conditions, surgeries and the search autosuggest — catalogue content that lives in code, not Mongo. */
+/** Conditions, surgeries and the search autosuggest. */
 export async function catalogueRoutes(app: FastifyInstance) {
   app.get('/conditions', async (_request, reply) => {
     reply.header('cache-control', CATALOGUE_CACHE);
-    return { conditions: CONDITIONS.map(conditionSummary) };
+    return { conditions: allConditions().map(conditionSummary) };
   });
 
   app.get('/conditions/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
     const city = cityOf(cityQuery.parse(request.query).city);
-    const condition = CONDITION_BY_SLUG.get(slug);
+    const condition = conditionBySlug(slug);
     if (!condition) throw notFound('Condition not found');
 
     const [specialty, doctorCount, article] = await Promise.all([
@@ -69,8 +67,8 @@ export async function catalogueRoutes(app: FastifyInstance) {
       focus: focus ?? null,
       doctorCount,
       article: article ? toDto(article) : null,
-      related: CONDITIONS.filter((c) => c.slug !== slug && c.specialty === condition.specialty).map(conditionSummary),
-      otherCities: CITIES.filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
+      related: allConditions().filter((c) => c.slug !== slug && c.specialty === condition.specialty).map(conditionSummary),
+      otherCities: allCities().filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
       faqs: [
         { question: `Which doctor should I see for ${condition.name.toLowerCase()} in ${place}?`, answer: `A ${specialty?.name ?? 'doctor'} treats ${condition.name.toLowerCase()}. Curxx lists ${doctorCount} verified ${specialty?.plural ?? 'doctors'} in ${place} you can book for a clinic visit${specialty?.video !== false ? ' or an online consultation' : ''}.` },
         { question: `What are the common symptoms of ${condition.name.toLowerCase()}?`, answer: `${condition.symptoms.join('; ')}.` },
@@ -83,13 +81,13 @@ export async function catalogueRoutes(app: FastifyInstance) {
   app.get('/surgeries', async (request, reply) => {
     const city = cityOf(cityQuery.parse(request.query).city);
     reply.header('cache-control', CATALOGUE_CACHE);
-    return { categories: SURGERY_CATEGORIES, city: { slug: city.slug, name: city.name }, surgeries: SURGERIES.map((s) => surgerySummary(s, city.tier)) };
+    return { categories: surgeryCategories(), city: { slug: city.slug, name: city.name }, surgeries: allSurgeries().map((s) => surgerySummary(s, city.tier)) };
   });
 
   app.get('/surgeries/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
     const city = cityOf(cityQuery.parse(request.query).city);
-    const surgery = SURGERY_BY_SLUG.get(slug);
+    const surgery = surgeryBySlug(slug);
     if (!surgery) throw notFound('Surgery not found');
 
     const departments = surgery.departments.map((d) => new RegExp(`^${escapeRegex(d)}`, 'i'));
@@ -116,8 +114,8 @@ export async function catalogueRoutes(app: FastifyInstance) {
       specialty: specialty ? toDto(specialty) : null,
       hospitals: hospitals.map((h) => toDto(h)),
       surgeons: surgeons.map((d) => toDto(d)),
-      related: SURGERIES.filter((s) => s.slug !== slug && s.category === surgery.category).map((s) => surgerySummary(s, city.tier)),
-      otherCities: CITIES.filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
+      related: allSurgeries().filter((s) => s.slug !== slug && s.category === surgery.category).map((s) => surgerySummary(s, city.tier)),
+      otherCities: allCities().filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
       faqs: [
         { question: `What is the cost of ${surgery.name.toLowerCase()} in ${city.name}?`, answer: `${surgery.name} in ${city.name} typically costs ${inr(low)} to ${inr(high)}, depending on the hospital, technique (${surgery.techniques.slice(0, 2).join(' or ')}), room type and insurance. Curxx care coordinators share an itemised estimate before you decide.` },
         { question: `Is ${surgery.name.toLowerCase()} covered by insurance?`, answer: surgery.insurance ? `Yes, it is usually covered under health insurance when medically necessary. Partner hospitals in ${city.name} offer cashless treatment with most insurers, and we help with pre-authorisation.` : `It is usually considered elective and not covered by most insurance plans. No-cost EMI options are available at partner hospitals.` },
@@ -144,17 +142,17 @@ export async function catalogueRoutes(app: FastifyInstance) {
       }
     };
     const aliasTarget = SPECIALTY_ALIASES[q.toLowerCase().replace(/\s+/g, '-')];
-    const fromConditions = new Set(CONDITIONS.filter((c) => anywhere.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty));
+    const fromConditions = new Set(allConditions().filter((c) => anywhere.test(c.name) || c.symptoms.some((s) => re.test(s))).map((c) => c.specialty));
     const specialties = catalogue
       .map((s) => ({ s, score: re.test(s.name) || re.test(s.plural) || s.slug === aliasTarget ? 3 : fromConditions.has(s.slug) ? 2 : keywordHit(s.keywords) || s.conditions?.some((c) => anywhere.test(c)) ? 1 : 0 }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score || a.s.name.localeCompare(b.s.name))
       .slice(0, 5)
       .map(({ s }) => ({ slug: s.slug, name: s.name, plural: s.plural, icon: s.icon }));
-    const conditions = CONDITIONS.filter((c) => anywhere.test(c.name) || c.symptoms.some((s) => re.test(s)))
+    const conditions = allConditions().filter((c) => anywhere.test(c.name) || c.symptoms.some((s) => re.test(s)))
       .slice(0, 4)
       .map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty }));
-    const surgeries = SURGERIES.filter((s) => anywhere.test(s.name) || s.treats.some((t) => re.test(t)))
+    const surgeries = allSurgeries().filter((s) => anywhere.test(s.name) || s.treats.some((t) => re.test(t)))
       .slice(0, 3)
       .map((s) => ({ slug: s.slug, name: s.name, category: s.category }));
 

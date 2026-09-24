@@ -5,15 +5,14 @@ import { Types } from 'mongoose';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { refreshDoctorRatings } from '../../db/catalogue.js';
-import { CITIES } from '../../db/data/cities.js';
 import { describeSchedule, type Schedule } from '../../db/data/doctor-network.js';
 import { FACILITY_TYPES } from '../../db/data/facility-network.js';
 import { SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
-import { SURGERIES } from '../../db/data/surgeries.js';
-import { CONDITIONS } from '../../db/data/conditions.js';
+import { cities, conditions, reloadCatalogue, surgeries } from '../../lib/catalogue-store.js';
 import { HttpError, badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
+import { CityModel, ConditionModel, SurgeryModel } from '../../models/catalogue.model.js';
 import { ArticleModel } from '../../models/article.model.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
@@ -23,9 +22,11 @@ import { LeadModel } from '../../models/lead.model.js';
 import { MedicineCategoryModel, MedicineModel } from '../../models/medicine.model.js';
 import { OrderModel } from '../../models/order.model.js';
 import { ReviewModel } from '../../models/review.model.js';
+import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../../models/site.model.js';
 import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { UserModel } from '../../models/user.model.js';
+import { resetSiteStats } from '../site/site.routes.js';
 
 type Doc = Record<string, any>;
 
@@ -78,6 +79,31 @@ async function prepareDoctor(body: Doc, existing: Doc | null) {
     next.slotsThrough = null;
   }
   return next;
+}
+
+/** First URL segments the website already uses: a city can't take one of these slugs. */
+const RESERVED_CITY_SLUGS = new Set(['account', 'blog', 'book', 'cart', 'checkout', 'clinic', 'consult', 'curxx-plus', 'doctor', 'doctors', 'for-providers', 'lab', 'lab-tests', 'labs', 'login', 'medicines', 'orders', 'partner-with-us', 'privacy', 'records', 'register', 'specialties', 'surgeries', 'clinics', 'hospitals', 'teleconsultation-policy', 'terms', 'triage', 'api']);
+
+async function prepareCity(body: Doc, existing: Doc | null) {
+  const slug = existing?.slug ?? body.slug;
+  if (!existing && RESERVED_CITY_SLUGS.has(slug)) throw badRequest(`"${slug}" is already a page on the website; pick another slug`, 'reserved_slug');
+  if (body.aliases) {
+    body.aliases = [...new Set((body.aliases as string[]).map((a) => slugify(String(a))).filter((a) => a && a !== slug))];
+    const taken = cities().find((c) => c.slug !== slug && (body.aliases.includes(c.slug) || c.aliases.some((a) => body.aliases.includes(a))));
+    if (taken) throw badRequest(`An alias is already used by ${taken.name}`, 'duplicate_alias');
+  }
+  if (body.localities) {
+    if (!Array.isArray(body.localities)) throw badRequest('localities: send a list', 'invalid_record');
+    body.localities = (body.localities as Doc[]).map((l) => ({ ...l, slug: slugify(String(l.slug || l.name || '')), lat: l.lat ?? body.lat ?? existing?.lat, lng: l.lng ?? body.lng ?? existing?.lng }));
+    if (body.localities.some((l: Doc) => !l.slug || !l.name)) throw badRequest('localities: every locality needs a name', 'invalid_record');
+  }
+  return body;
+}
+
+/** Conditions and surgeries point at a specialty; make sure it exists. */
+async function checkSpecialty(body: Doc) {
+  if (body.specialty && !(await SpecialtyModel.exists({ slug: body.specialty }))) throw badRequest(`No specialty with slug "${body.specialty}"`, 'unknown_specialty');
+  return body;
 }
 
 const RESOURCES: Record<string, Resource> = {
@@ -150,6 +176,46 @@ const RESOURCES: Record<string, Resource> = {
       await refreshDoctorRatings([doc.doctorSlug]);
     },
   },
+  cities: {
+    model: CityModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['name', 'state', 'slug', 'aliases'], sort: { order: 1, name: 1 }, filters: ['tier', 'managed'],
+    prepare: prepareCity,
+  },
+  conditions: {
+    model: ConditionModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['name', 'slug', 'summary'], sort: { order: 1, name: 1 }, filters: ['specialty', 'managed'],
+    prepare: checkSpecialty,
+  },
+  surgeries: {
+    model: SurgeryModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['name', 'slug', 'description'], sort: { order: 1, name: 1 }, filters: ['category', 'specialty', 'popular', 'managed'],
+    prepare: checkSpecialty,
+  },
+  'site-settings': {
+    model: SiteSettingModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['label', 'slug', 'value', 'note'], sort: { group: 1, slug: 1 }, filters: ['group', 'kind'],
+  },
+  content: {
+    model: ContentModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['label', 'slug', 'title', 'page'], sort: { page: 1, order: 1 }, filters: ['page', 'published'],
+    prepare: async (body) => {
+      if (body.items !== undefined && !Array.isArray(body.items)) throw badRequest('items: send a list', 'invalid_record');
+      return body;
+    },
+  },
+  testimonials: {
+    model: TestimonialModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['name', 'text', 'location'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published'],
+    prepare: async (body, existing) => {
+      const name = body.name ?? existing?.name;
+      if (!existing && !body.initials && name) body.initials = String(name).replace(/^Dr\.?\s+/i, '').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+      return body;
+    },
+  },
+  plans: {
+    model: PlanModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['name', 'slug', 'tagline'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published'],
+  },
   leads: {
     model: LeadModel, key: '_id', remove: true, editable: ['status', 'note'],
     search: ['name', 'phone', 'email', 'organisation', 'message'], sort: { createdAt: -1 }, filters: ['kind', 'status', 'city'],
@@ -204,6 +270,12 @@ async function write<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Routes serve cities, conditions and surgeries from memory, and site stats are cached: refresh both. */
+async function afterWrite(resource: string) {
+  resetSiteStats();
+  if (['cities', 'conditions', 'surgeries', 'content'].includes(resource)) await reloadCatalogue();
+}
+
 const toClient = ({ _id, ...doc }: Doc) => ({ id: String(_id), ...doc });
 
 function lookupFilter(resource: Resource, key: string) {
@@ -254,7 +326,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ArticleModel.distinct('category'),
       ]);
       return {
-        cities: CITIES.map((c) => ({ slug: c.slug, name: c.name, localities: c.localities.map((l) => l.name) })),
+        cities: cities().map((c) => ({ slug: c.slug, name: c.name, localities: c.localities.map((l) => l.name) })),
         specialties: specialties.map((s) => ({ slug: s.slug, name: s.name, focusAreas: s.subSpecialties.map((f: Doc) => ({ slug: f.slug, name: f.name })) })),
         specialtyCategories: SPECIALTY_CATEGORIES,
         facilityTypes: FACILITY_TYPES,
@@ -262,8 +334,11 @@ export async function adminRoutes(app: FastifyInstance) {
         labCategories: labCategories.map((c) => ({ slug: c.slug, name: c.name })),
         medicineCategories: medicineCategories.map((c) => ({ slug: c.slug, name: c.name })),
         articleCategories,
-        surgeries: SURGERIES.map((s) => ({ slug: s.slug, name: s.name, category: s.category, specialty: s.specialty, cost: s.cost })),
-        conditions: CONDITIONS.map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty })),
+        surgeries: surgeries().map((s) => ({ slug: s.slug, name: s.name, category: s.category, specialty: s.specialty, cost: s.cost })),
+        surgeryCategories: [...new Set(surgeries().map((s) => s.category))],
+        conditions: conditions().map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty })),
+        contentPages: await ContentModel.distinct('page'),
+        settingGroups: await SiteSettingModel.distinct('group'),
       };
     });
 
@@ -317,7 +392,7 @@ export async function adminRoutes(app: FastifyInstance) {
       for (const f of r.filters) {
         const v = query[f];
         if (v === undefined || v === '') continue;
-        filter[f] = v === 'true' ? true : v === 'false' ? { $ne: true } : f === 'rating' ? Number(v) : v;
+        filter[f] = v === 'true' ? true : v === 'false' ? { $ne: true } : f === 'rating' || f === 'tier' ? Number(v) : v;
       }
       if (q) {
         const re = new RegExp(escapeRegex(q), 'i');
@@ -345,7 +420,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!r.create) throw badRequest(`New ${name} can't be added from the admin panel`, 'read_only');
       let body = clean(request.body);
       if (r.key === 'slug') {
-        body.slug = slugify(String(body.slug || body.name || body.title || ''));
+        body.slug = slugify(String(body.slug || body.name || body.title || body.label || ''));
         if (!body.slug) throw badRequest('Give the record a name (or slug)', 'invalid_record');
       }
       if (r.prepare) body = await r.prepare(body, null);
@@ -353,6 +428,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const doc = await write(() => r.model.create(body));
       const plain = (doc as { toObject: () => Doc }).toObject();
       await r.after?.(plain, 'create');
+      await afterWrite(name);
       reply.code(201);
       return { item: toClient(plain) };
     });
@@ -369,6 +445,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (r.managed) body.managed = true;
       const doc = await write(() => r.model.findOneAndUpdate({ _id: existing._id }, { $set: body }, { new: true, runValidators: true }).lean<Doc>());
       await r.after?.(doc!, 'update');
+      await afterWrite(name);
       return { item: toClient(doc!) };
     });
 
@@ -379,6 +456,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const doc = await r.model.findOneAndDelete(lookupFilter(r, key)).lean<Doc>();
       if (!doc) throw notFound('Record not found');
       await r.after?.(doc, 'delete');
+      await afterWrite(name);
       return { ok: true };
     });
   });

@@ -1,4 +1,4 @@
-import { resolveCitySlug } from '../../db/data/cities.js';
+import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { DEFAULT_PINCODE, cityOrigin, distanceKm, locate, type Place } from '../../lib/geo.js';
 import { LabModel, type Lab } from '../../models/lab.model.js';
 import { OrderModel } from '../../models/order.model.js';

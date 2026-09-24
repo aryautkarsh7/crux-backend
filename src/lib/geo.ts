@@ -1,4 +1,4 @@
-import { CITIES } from '../db/data/cities.js';
+import { cities, localityByPin } from './catalogue-store.js';
 
 /** Rough centroids for Bengaluru pincodes, used to find the nearest lab and check home-collection reach. */
 const PINCODES: Record<string, { area: string; lat: number; lng: number }> = {
@@ -59,8 +59,6 @@ export const DEFAULT_PINCODE = '560038';
 
 export type Place = { pincode: string; area: string; lat: number; lng: number; approximate: boolean; city: string };
 
-const LOCALITY_BY_PIN = new Map<string, { city: string; area: string; lat: number; lng: number }>();
-for (const city of CITIES) for (const l of city.localities) if (!LOCALITY_BY_PIN.has(l.pincode)) LOCALITY_BY_PIN.set(l.pincode, { city: city.slug, area: l.name, lat: l.lat, lng: l.lng });
 
 /**
  * Resolves a pincode in any city we serve to a point. Known locality pincodes are exact; other
@@ -70,16 +68,18 @@ export function locate(pincode: string): Place | null {
   if (!/^\d{6}$/.test(pincode)) return null;
   const legacy = PINCODES[pincode];
   if (legacy) return { pincode, ...legacy, approximate: false, city: 'bangalore' };
-  const known = LOCALITY_BY_PIN.get(pincode);
+  const known = localityByPin(pincode);
   if (known) return { pincode, area: known.area, lat: known.lat, lng: known.lng, approximate: false, city: known.city };
-  const city = CITIES.find((c) => c.pincodePrefixes.some((p) => pincode.startsWith(p)));
+  const city = cities().find((c) => c.pincodePrefixes.some((p) => pincode.startsWith(p)));
   return city ? { pincode, area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug } : null;
 }
 
 /** The default "near you" point for a city: its first listed locality. */
 export function cityOrigin(citySlug: string): Place {
-  const city = CITIES.find((c) => c.slug === citySlug) ?? CITIES[0]!;
-  const l = city.localities[0]!;
+  const city = cities().find((c) => c.slug === citySlug) ?? cities()[0]!;
+  const l = city.localities[0];
+  // A city added in the admin panel may not have localities yet: measure from its centre.
+  if (!l) return { pincode: '', area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug };
   return { pincode: l.pincode, area: l.name, lat: l.lat, lng: l.lng, approximate: false, city: city.slug };
 }
 
