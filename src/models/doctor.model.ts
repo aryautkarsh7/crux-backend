@@ -29,6 +29,8 @@ const doctorSchema = new Schema(
     schedule: {
       days: { type: [Number], default: [1, 2, 3, 4, 5, 6] },
       sessions: { type: [{ start: String, end: String, _id: false }], default: [] },
+      /** Days with their own hours; a day listed here ignores the common sessions. */
+      perDay: { type: [{ day: Number, sessions: [{ start: String, end: String, _id: false }], _id: false }], default: [] },
       step: { type: Number, default: 30 },
       video: { type: String, enum: ['none', 'mixed', 'all'], default: 'mixed' },
     },
@@ -39,6 +41,12 @@ const doctorSchema = new Schema(
     instant: { type: Boolean, default: false },
     /** Slots exist up to this day; later days are generated when someone looks. */
     slotsThrough: { type: Date, default: null },
+    /** Direct numbers for Call / WhatsApp buttons; fall back to the clinic's. */
+    phone: { type: String, default: '' },
+    whatsapp: { type: String, default: '' },
+    /** Admin ranking within its city (1 = top, 0 = not ranked). rankScore is derived for sorting. */
+    rank: { type: Number, default: 0 },
+    rankScore: { type: Number, default: 0, index: true },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
   },

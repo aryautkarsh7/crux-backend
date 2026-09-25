@@ -20,6 +20,8 @@ const bookBody = z.object({
   slotId: objectId,
   focus: z.string().trim().max(60).default(''),
   notes: z.string().trim().max(500).default(''),
+  /** On a tele (video) slot the patient can choose a phone call instead: teleconsultation. */
+  mode: z.enum(['clinic', 'video', 'audio']).optional(),
   patient: z.object({
     name: z.string().trim().min(2).max(80),
     age: z.coerce.number().int().min(0).max(120).optional(),
@@ -43,7 +45,7 @@ function roomState(a: { mode: string; startsAt: Date; status: string }) {
   const closesAt = new Date(start + ROOM_CLOSES_MS);
   // Outside production the room is always joinable so the flow can be tested any time.
   const inWindow = now >= opensAt.getTime() && now <= closesAt.getTime();
-  const canJoin = a.mode === 'video' && a.status === 'confirmed' && (inWindow || (!env.isProduction && now <= closesAt.getTime()));
+  const canJoin = (a.mode === 'video' || a.mode === 'audio') && a.status === 'confirmed' && (inWindow || (!env.isProduction && now <= closesAt.getTime()));
   return { opensAt, closesAt, canJoin };
 }
 
@@ -79,7 +81,7 @@ export async function appointmentRoutes(app: FastifyInstance) {
   });
 
   app.post('/appointments', { preHandler: authenticate }, async (request, reply) => {
-    const { slotId, patient, focus, notes } = bookBody.parse(request.body);
+    const { slotId, patient, focus, notes, mode: wanted } = bookBody.parse(request.body);
 
     // One atomic write claims the slot: open, lapsed, or held by this same patient.
     const slot = await SlotModel.findOneAndUpdate(
@@ -100,7 +102,8 @@ export async function appointmentRoutes(app: FastifyInstance) {
         doctorSlug: slot.doctorSlug,
         slot: slot._id,
         startsAt: slot.startsAt,
-        mode: slot.mode,
+        // A tele slot can be taken as video or audio; a clinic slot is always a visit.
+        mode: slot.mode === 'video' && wanted === 'audio' ? 'audio' : slot.mode,
         amount: slot.fee,
         patient,
         focus,
@@ -109,7 +112,7 @@ export async function appointmentRoutes(app: FastifyInstance) {
       await MessageModel.create({
         appointment: appointment._id,
         from: 'system',
-        text: `Appointment ${appointment.reference} confirmed with ${doctor.name}. You can share symptoms or reports here before your ${slot.mode === 'video' ? 'video consult' : 'visit'}.`,
+        text: `Appointment ${appointment.reference} confirmed with ${doctor.name}. You can share symptoms or reports here before your ${slot.mode === 'clinic' ? 'visit' : wanted === 'audio' ? 'phone consultation' : 'video consult'}.`,
       });
       reply.code(201);
       return { appointment: shape({ ...appointment.toObject(), doctor }) };
@@ -167,7 +170,8 @@ export async function appointmentRoutes(app: FastifyInstance) {
     const previousSlot = appointment.slot;
     appointment.slot = next._id;
     appointment.startsAt = next.startsAt;
-    appointment.mode = next.mode;
+    // A phone consultation stays a phone consultation when moved to another tele slot.
+    appointment.mode = next.mode === 'video' && appointment.mode === 'audio' ? 'audio' : next.mode;
     appointment.amount = next.fee;
     await appointment.save();
     await SlotModel.updateOne({ _id: previousSlot }, { status: 'open', $unset: { heldBy: 1, holdExpiresAt: 1 } });
@@ -206,7 +210,7 @@ export async function appointmentRoutes(app: FastifyInstance) {
       replies.push(await MessageModel.create({
         appointment: appointment._id,
         from: 'doctor',
-        text: `Thanks for sharing — ${doctorName} will review this before your ${appointment.mode === 'video' ? 'call' : 'visit'}. If symptoms get worse suddenly, call 108.`,
+        text: `Thanks for sharing — ${doctorName} will review this before your ${appointment.mode === 'clinic' ? 'visit' : 'call'}. If symptoms get worse suddenly, call 108.`,
       }));
     }
     reply.code(201);

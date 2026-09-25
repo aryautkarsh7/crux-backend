@@ -17,6 +17,10 @@ const facilitySchema = new Schema(
     area: { type: String, required: true },
     address: { type: String, required: true },
     phone: { type: String, default: '' },
+    whatsapp: { type: String, default: '' },
+    /** Admin ranking within its city (1 = top, 0 = not ranked). rankScore is derived for sorting. */
+    rank: { type: Number, default: 0 },
+    rankScore: { type: Number, default: 0, index: true },
     tagline: { type: String, default: '' },
     about: { type: String, default: '' },
     rating: { type: Number, default: 4.6 },

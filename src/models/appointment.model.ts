@@ -8,7 +8,8 @@ const appointmentSchema = new Schema(
     doctorSlug: { type: String, required: true },
     slot: { type: Schema.Types.ObjectId, ref: 'Slot', required: true, unique: true },
     startsAt: { type: Date, required: true },
-    mode: { type: String, enum: ['clinic', 'video'], required: true },
+    /** audio = teleconsultation by phone call, booked on a tele (video) slot. */
+    mode: { type: String, enum: ['clinic', 'video', 'audio'], required: true, index: true },
     amount: { type: Number, required: true },
     status: { type: String, enum: ['confirmed', 'completed', 'cancelled'], default: 'confirmed', index: true },
     focus: { type: String, default: '' },

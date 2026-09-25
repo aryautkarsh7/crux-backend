@@ -16,7 +16,7 @@ export type SlotSource = {
   freeVideo?: boolean | null;
   instant?: boolean | null;
   slotsThrough?: Date | null;
-  schedule?: { days?: number[] | null; sessions?: Session[] | null; step?: number | null; video?: string | null } | null;
+  schedule?: { days?: number[] | null; sessions?: Session[] | null; perDay?: { day?: number | null; sessions?: Session[] | null }[] | null; step?: number | null; video?: string | null } | null;
 };
 
 const dayStart = (d: Date) => {
@@ -41,7 +41,9 @@ export function slotsForDay(doctor: SlotSource, day: Date, now = new Date()) {
   if (!days.includes(day.getDay())) return [];
   const step = schedule.step || 30;
   const videoMode = schedule.video ?? 'mixed';
-  const sessions = schedule.sessions?.length ? schedule.sessions : [{ start: '10:00', end: '13:30' }, { start: '17:00', end: '20:30' }];
+  // A day can have its own hours (perDay); otherwise the common sessions apply.
+  const own = schedule.perDay?.find((p) => p.day === day.getDay())?.sessions;
+  const sessions = own?.length ? own : schedule.sessions?.length ? schedule.sessions : [{ start: '10:00', end: '13:30' }, { start: '17:00', end: '20:30' }];
   const out: { doctor: unknown; doctorSlug: string; startsAt: Date; mode: 'clinic' | 'video'; fee: number; free: boolean; status: 'open' }[] = [];
   let index = 0;
   let freeLeft = doctor.freeVideo ? FREE_VIDEO_PER_DAY : 0;

@@ -30,6 +30,7 @@ const userSchema = new Schema(
     /** Set once the per-user demo health locker has been created. */
     demoSeededAt: { type: Date },
     lastLoginAt: { type: Date },
+    loginCount: { type: Number, default: 0 },
   },
   { timestamps: true, versionKey: false },
 );

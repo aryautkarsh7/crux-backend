@@ -31,7 +31,8 @@ const listQuery = z.object({
 });
 
 const SORTS: Record<string, Record<string, 1 | -1>> = {
-  relevance: { recommendPercent: -1, rating: -1, reviewCount: -1 },
+  // Admin ranking (rankScore) first, then quality signals.
+  relevance: { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1 },
   fee_asc: { fee: 1 },
   fee_desc: { fee: -1 },
   experience: { experienceYears: -1 },
@@ -214,7 +215,7 @@ export async function doctorRoutes(app: FastifyInstance) {
         DoctorModel.aggregate([
           { $match: filter },
           { $addFields: { _rank: { $let: { vars: { i: { $indexOfArray: [specialtyOrder, '$specialty'] } }, in: { $cond: [{ $lt: ['$$i', 0] }, 99, '$$i'] } } } } },
-          { $sort: { _rank: 1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } },
+          { $sort: { _rank: 1, rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } },
           { $skip: (page - 1) * limit },
           { $limit: limit },
           { $project: { _rank: 0 } },

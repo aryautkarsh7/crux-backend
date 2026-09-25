@@ -110,7 +110,7 @@ export async function meRoutes(app: FastifyInstance) {
     const items: Notification[] = [];
     for (const a of appointments as any[]) {
       const when = new Date(a.startsAt).toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
-      items.push({ id: `apt-${a._id}`, icon: a.mode === 'video' ? 'videocam' : 'event_available', title: `${a.mode === 'video' ? 'Video consult' : 'Clinic visit'} · ${when}`, body: `${a.doctor?.name ?? 'Your doctor'}${a.mode === 'clinic' && a.doctor?.clinicName ? ` · ${a.doctor.clinicName}, ${a.doctor.area}` : ''}`, href: a.mode === 'video' ? `/consult/lobby/${a._id}` : '/account', at: a.startsAt, tone: 'info' });
+      items.push({ id: `apt-${a._id}`, icon: a.mode === 'video' ? 'videocam' : a.mode === 'audio' ? 'call' : 'event_available', title: `${a.mode === 'video' ? 'Video consult' : a.mode === 'audio' ? 'Phone consultation' : 'Clinic visit'} · ${when}`, body: `${a.doctor?.name ?? 'Your doctor'}${a.mode === 'clinic' && a.doctor?.clinicName ? ` · ${a.doctor.clinicName}, ${a.doctor.area}` : ''}`, href: a.mode === 'clinic' ? '/account' : `/consult/lobby/${a._id}`, at: a.startsAt, tone: 'info' });
     }
     for (const o of orders) {
       const label = o.kind === 'pharmacy' ? `Medicine order ${o.reference}` : `Lab booking ${o.reference}`;

@@ -8,6 +8,7 @@ import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { ensureCatalogueFresh } from './lib/catalogue-store.js';
 import { HttpError } from './lib/errors.js';
+import { activityRoutes } from './modules/activity/activity.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { appointmentRoutes } from './modules/appointments/appointment.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
@@ -112,6 +113,7 @@ export async function buildApp() {
   await app.register(catalogueRoutes, { prefix: '/api/v1' });
   await app.register(siteRoutes, { prefix: '/api/v1' });
   await app.register(meRoutes, { prefix: '/api/v1/me' });
+  await app.register(activityRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
 
   return app;

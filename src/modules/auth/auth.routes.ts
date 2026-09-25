@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '../../lib/auth.js';
 import { notFound } from '../../lib/errors.js';
+import { LoginEventModel } from '../../models/activity.model.js';
 import { UserModel } from '../../models/user.model.js';
+import { deviceOf } from '../activity/activity.routes.js';
 import { requestOtp, verifyOtp } from './auth.service.js';
 import { ensureDemoLocker } from '../me/demo-locker.js';
 
@@ -72,7 +74,17 @@ export async function authRoutes(app: FastifyInstance) {
     const { phone, code, registration } = verifyBody.parse(request.body);
     const verified = await verifyOtp(phone, code, registration);
     await ensureDemoLocker(verified._id, verified.phone);
-    const user = (await UserModel.findById(verified._id).lean())!;
+    const user = (await UserModel.findByIdAndUpdate(verified._id, { $inc: { loginCount: 1 } }, { new: true }).lean())!;
+    // Sign-in history for the admin panel; never block a login on it.
+    LoginEventModel.create({
+      user: user._id,
+      phone: user.phone,
+      name: user.name ?? '',
+      firstLogin: user.loginCount === 1,
+      intent: registration ? 'register' : 'login',
+      device: deviceOf(request),
+      userAgent: String(request.headers['user-agent'] ?? '').slice(0, 200),
+    }).catch((error) => request.log.warn({ err: error }, 'login event not recorded'));
     const token = await request.server.jwt.sign({ sub: String(user._id), phone: user.phone }, { expiresIn: '30d' });
     return { token, user: toUser(user) };
   });

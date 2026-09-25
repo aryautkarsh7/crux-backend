@@ -11,6 +11,8 @@ import { SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { cities, conditions, reloadCatalogue, surgeries } from '../../lib/catalogue-store.js';
 import { HttpError, badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
+import { embedFor } from '../activity/activity.routes.js';
+import { InteractionModel, LoginEventModel, ReportModel, VideoModel } from '../../models/activity.model.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
 import { CityModel, ConditionModel, SurgeryModel } from '../../models/catalogue.model.js';
 import { ArticleModel } from '../../models/article.model.js';
@@ -113,7 +115,10 @@ const RESOURCES: Record<string, Resource> = {
     filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified'],
     prepare: prepareDoctor,
     after: async (doc, action) => {
-      if (action !== 'create') await SlotModel.deleteMany({ doctorSlug: doc.slug, status: 'open' });
+      if (action === 'create') return;
+      await SlotModel.deleteMany({ doctorSlug: doc.slug, status: 'open' });
+      // Open slots are rebuilt from the (possibly new) schedule and fees on the next view — any edit, not just a schedule change.
+      if (action !== 'delete') await DoctorModel.updateOne({ slug: doc.slug }, { $set: { slotsThrough: null } });
     },
   },
   facilities: {
@@ -234,9 +239,39 @@ const RESOURCES: Record<string, Resource> = {
   },
   users: {
     model: UserModel, key: '_id', editable: ['name', 'email', 'gender', 'bloodGroup'],
-    search: ['name', 'phone', 'email'], sort: { createdAt: -1 }, filters: ['gender'],
+    search: ['name', 'phone', 'email'], sort: { lastLoginAt: -1 }, filters: ['gender'],
+  },
+  videos: {
+    model: VideoModel, key: 'slug', managed: true, create: true, remove: true,
+    search: ['title', 'doctorSlug', 'description'], sort: { order: 1, createdAt: -1 }, filters: ['kind', 'doctorSlug', 'specialty', 'published', 'featured'],
+    prepare: async (body) => {
+      if (body.url !== undefined && embedFor(String(body.url)).provider === 'link') {
+        throw badRequest('url: paste a YouTube, YouTube Shorts or Instagram reel link, or a direct .mp4 file', 'invalid_record');
+      }
+      if (body.doctorSlug && !(await DoctorModel.exists({ slug: body.doctorSlug }))) throw badRequest(`No doctor with slug "${body.doctorSlug}"`, 'unknown_doctor');
+      return body;
+    },
+  },
+  interactions: {
+    model: InteractionModel, key: '_id', remove: true, editable: [],
+    search: ['targetName', 'targetSlug', 'userPhone', 'number'], sort: { createdAt: -1 }, filters: ['kind', 'targetType', 'city', 'device'],
+  },
+  reports: {
+    model: ReportModel, key: '_id', remove: true, editable: ['status', 'note'],
+    search: ['targetName', 'targetSlug', 'details', 'contact'], sort: { createdAt: -1 }, filters: ['status', 'targetType', 'city'],
+  },
+  'login-events': {
+    model: LoginEventModel, key: '_id', editable: [],
+    search: ['phone', 'name'], sort: { createdAt: -1 }, filters: ['firstLogin', 'device'],
   },
 };
+
+/** Ranking 1 sorts first; 0 means "not ranked". Stored as a descending score so plain sorts work. */
+const rankScoreOf = (rank: unknown) => {
+  const n = Number(rank);
+  return Number.isFinite(n) && n > 0 ? 100_000 - Math.min(Math.round(n), 99_999) : 0;
+};
+const RANKED = { doctors: DoctorModel, facilities: FacilityModel, labs: LabModel } as const;
 
 /** Strips anything that could be a Mongo operator or overwrite bookkeeping fields. */
 function clean(body: unknown): Doc {
@@ -349,6 +384,14 @@ export async function adminRoutes(app: FastifyInstance) {
       const counts = Object.fromEntries(
         await Promise.all(Object.entries(RESOURCES).map(async ([name, r]) => [name, await r.model.estimatedDocumentCount()] as const)),
       );
+      const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+      const [byMode, calls, logins, activeUsers, newReports] = await Promise.all([
+        AppointmentModel.aggregate<{ _id: string; count: number }>([{ $match: { startsAt: { $gte: today, $lt: tomorrow }, status: { $ne: 'cancelled' } } }, { $group: { _id: '$mode', count: { $sum: 1 } } }]),
+        InteractionModel.aggregate<{ _id: string; count: number }>([{ $match: { createdAt: { $gte: today } } }, { $group: { _id: '$kind', count: { $sum: 1 } } }]),
+        LoginEventModel.countDocuments({ createdAt: { $gte: today } }),
+        UserModel.countDocuments({ lastLoginAt: { $gte: weekAgo } }),
+        ReportModel.countDocuments({ status: 'new' }),
+      ]);
       const [appointmentsToday, newLeads, managed, recentAppointments, recentLeads, recentOrders, ordersByStatus] = await Promise.all([
         AppointmentModel.countDocuments({ startsAt: { $gte: today, $lt: tomorrow }, status: { $ne: 'cancelled' } }),
         LeadModel.countDocuments({ status: 'new' }),
@@ -358,9 +401,16 @@ export async function adminRoutes(app: FastifyInstance) {
         OrderModel.find({}, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 }).sort({ createdAt: -1 }).limit(8).lean(),
         OrderModel.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
       ]);
+      const count = (rows: { _id: string; count: number }[], key: string) => rows.find((r) => r._id === key)?.count ?? 0;
       return {
         counts,
         appointmentsToday,
+        appointmentsTodayByMode: { clinic: count(byMode, 'clinic'), video: count(byMode, 'video'), audio: count(byMode, 'audio') },
+        callsToday: count(calls, 'call'),
+        whatsappToday: count(calls, 'whatsapp'),
+        loginsToday: logins,
+        activeUsers7d: activeUsers,
+        newReports,
         newLeads,
         adminDoctors: managed,
         ordersByStatus: Object.fromEntries(ordersByStatus.map((o) => [o._id, o.count])),
@@ -368,6 +418,56 @@ export async function adminRoutes(app: FastifyInstance) {
         recentLeads: recentLeads.map(toClient),
         recentOrders: recentOrders.map(toClient),
       };
+    });
+
+    /** A patient's sign-ins, bookings, orders and Call/WhatsApp taps, for the Patients page. */
+    secured.get('/users/:id/activity', async (request) => {
+      const { id } = z.object({ id: z.string() }).parse(request.params);
+      if (!Types.ObjectId.isValid(id)) throw notFound('Record not found');
+      const [logins, appointments, orders, interactions] = await Promise.all([
+        LoginEventModel.find({ user: id }).sort({ createdAt: -1 }).limit(20).lean(),
+        AppointmentModel.find({ user: id }, { reference: 1, doctorSlug: 1, startsAt: 1, mode: 1, status: 1, amount: 1 }).sort({ startsAt: -1 }).limit(20).lean(),
+        OrderModel.find({ user: id }, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 }).sort({ createdAt: -1 }).limit(20).lean(),
+        InteractionModel.find({ user: id }).sort({ createdAt: -1 }).limit(20).lean(),
+      ]);
+      return { logins: logins.map(toClient), appointments: appointments.map(toClient), orders: orders.map(toClient), interactions: interactions.map(toClient) };
+    });
+
+    /** Ranking board: the current order of doctors (city + specialty), hospitals/clinics or labs (city). */
+    secured.get('/rankings', async (request) => {
+      const q = z
+        .object({
+          type: z.enum(['doctors', 'facilities', 'labs']),
+          city: z.string().min(1),
+          specialty: z.string().optional(),
+          category: z.string().optional(),
+          q: z.string().trim().max(80).optional(),
+        })
+        .parse(request.query);
+      const filter: Doc = { city: q.city };
+      if (q.type === 'doctors' && q.specialty) filter.specialty = q.specialty;
+      if (q.type === 'facilities' && q.category) filter.category = q.category;
+      if (q.q) filter.name = new RegExp(escapeRegex(q.q), 'i');
+      const model = RANKED[q.type] as Model<any>;
+      const sort: Record<string, 1 | -1> = q.type === 'doctors' ? { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } : { rankScore: -1, rating: -1, slug: 1 };
+      const [items, total] = await Promise.all([
+        model.find(filter, { slug: 1, name: 1, area: 1, rank: 1, rating: 1, reviewCount: 1, specialty: 1, category: 1, type: 1, clinicName: 1 }).sort(sort).limit(200).lean(),
+        model.countDocuments(filter),
+      ]);
+      return { items: (items as Doc[]).map(toClient), total };
+    });
+
+    /** Saves positions in one go. Doesn't mark records as admin-edited: seed data keeps refreshing. */
+    secured.post('/rankings', async (request) => {
+      const body = z
+        .object({
+          type: z.enum(['doctors', 'facilities', 'labs']),
+          ranks: z.array(z.object({ slug: z.string().min(1), rank: z.coerce.number().int().min(0).max(9999) })).min(1).max(500),
+        })
+        .parse(request.body);
+      const model = RANKED[body.type] as Model<any>;
+      const result = await model.bulkWrite(body.ranks.map((r) => ({ updateOne: { filter: { slug: r.slug }, update: { $set: { rank: r.rank, rankScore: rankScoreOf(r.rank) } } } })));
+      return { updated: result.modifiedCount ?? 0 };
     });
 
     const resourceOf = (name: string) => {
@@ -424,6 +524,7 @@ export async function adminRoutes(app: FastifyInstance) {
         if (!body.slug) throw badRequest('Give the record a name (or slug)', 'invalid_record');
       }
       if (r.prepare) body = await r.prepare(body, null);
+      if ('rank' in body) body.rankScore = rankScoreOf(body.rank);
       if (r.managed) body.managed = true;
       const doc = await write(() => r.model.create(body));
       const plain = (doc as { toObject: () => Doc }).toObject();
@@ -442,6 +543,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (r.editable) body = Object.fromEntries(Object.entries(body).filter(([k]) => r.editable!.includes(k)));
       if (r.key === 'slug') delete body.slug; // the slug is the public URL; renaming would break links
       if (r.prepare) body = await r.prepare(body, existing);
+      if ('rank' in body) body.rankScore = rankScoreOf(body.rank);
       if (r.managed) body.managed = true;
       const doc = await write(() => r.model.findOneAndUpdate({ _id: existing._id }, { $set: body }, { new: true, runValidators: true }).lean<Doc>());
       await r.after?.(doc!, 'update');

@@ -145,7 +145,8 @@ export async function labRoutes(app: FastifyInstance) {
         (!q.walkIn || lab.walkIn) &&
         (!needle || [lab.name, lab.area, lab.address, lab.tagline].some((f) => f?.toLowerCase().includes(needle))),
       )
-      .sort((a, b) => (q.sort === 'rating' ? b.lab.rating - a.lab.rating : q.sort === 'reviews' ? b.lab.reviewCount - a.lab.reviewCount : a.distanceKm - b.distanceKm));
+      // Admin-ranked labs lead the default (distance) order.
+      .sort((a, b) => (q.sort === 'rating' ? b.lab.rating - a.lab.rating : q.sort === 'reviews' ? b.lab.reviewCount - a.lab.reviewCount : (b.lab.rankScore ?? 0) - (a.lab.rankScore ?? 0) || a.distanceKm - b.distanceKm));
 
     const count = (values: string[]) => [...values.reduce((m, v) => m.set(v, (m.get(v) ?? 0) + 1), new Map<string, number>())].map(([value, n]) => ({ value, count: n })).sort((a, b) => a.value.localeCompare(b.value));
     reply.header('cache-control', CATALOGUE_CACHE);

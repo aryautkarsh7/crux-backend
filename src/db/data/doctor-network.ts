@@ -16,7 +16,26 @@ export type Schedule = {
   step: number;
   /** Which slots are video: none, every third, or all (online-only doctors). */
   video: 'none' | 'mixed' | 'all';
+  /** Days with their own hours (e.g. Sunday mornings only); these override `sessions` for that day. */
+  perDay?: { day: number; sessions: Session[] }[];
 };
+
+/** The sessions a doctor consults on a given weekday. */
+export const sessionsFor = (s: Pick<Schedule, 'sessions' | 'perDay'>, day: number) => s.perDay?.find((p) => p.day === day)?.sessions ?? s.sessions;
+
+/** [1,2,3,5] → "Mon–Wed, Fri"; all seven → "All days". Weeks read Monday first. */
+function dayList(days: number[]) {
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const sorted = order.filter((d) => days.includes(d));
+  if (sorted.length === 7) return 'All days';
+  const runs: number[][] = [];
+  for (const d of sorted) {
+    const last = runs.at(-1);
+    if (last && order.indexOf(d) === order.indexOf(last.at(-1)!) + 1) last.push(d);
+    else runs.push([d]);
+  }
+  return runs.map((r) => (r.length >= 3 ? `${DAY_NAMES[r[0]!]}–${DAY_NAMES[r.at(-1)!]}` : r.map((d) => DAY_NAMES[d]).join(', '))).join(', ');
+}
 
 export type RosterDoctor = {
   slug: string; name: string; gender: 'female' | 'male'; qualification: string; title: string; specialty: string; city: string;
@@ -87,9 +106,15 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** "Mon–Sat · 10:00 AM – 1:30 PM, 5:00 PM – 9:00 PM" */
 export function describeSchedule(s: Schedule) {
-  const days = s.days.length === 7 ? 'All days' : s.days.join(',') === '1,2,3,4,5,6' ? 'Mon–Sat' : s.days.join(',') === '1,2,3,4,5' ? 'Mon–Fri' : s.days.map((d) => DAY_NAMES[d]).join(', ');
-  if (s.sessions.length === 1 && s.sessions[0]!.start === '00:00' && s.sessions[0]!.end === '24:00') return `${days} · 24 hours (online)`;
-  return `${days} · ${s.sessions.map((x) => `${toLabel(x.start)} – ${toLabel(x.end)}`).join(', ')}`;
+  const hours = (sessions: Session[]) =>
+    sessions.length === 1 && sessions[0]!.start === '00:00' && sessions[0]!.end === '24:00' ? '24 hours (online)' : sessions.map((x) => `${toLabel(x.start)} – ${toLabel(x.end)}`).join(', ');
+  // Group days that share the same hours: "Mon–Fri · 9:00 AM – 1:00 PM; Sun · 10:00 AM – 12:00 PM".
+  const groups = new Map<string, number[]>();
+  for (const day of [1, 2, 3, 4, 5, 6, 0].filter((d) => s.days.includes(d))) {
+    const label = hours(sessionsFor(s, day));
+    groups.set(label, [...(groups.get(label) ?? []), day]);
+  }
+  return [...groups].map(([label, days]) => `${dayList(days)} · ${label}`).join('; ');
 }
 
 /** Parses "9:00 AM – 1:00 PM, 4:00 PM – 7:00 PM" into sessions. */

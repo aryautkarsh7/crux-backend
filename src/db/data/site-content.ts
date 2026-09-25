@@ -224,6 +224,8 @@ export const SITE_SETTINGS = [
   { slug: 'claim-certification-subtitle', label: 'Certification badge subtitle', group: 'Claims — must be true', kind: 'claim', value: 'Certified Protocol', note: 'Line under the certification badge.' },
   { slug: 'claim-app-rating', label: 'App store rating', group: 'Claims — must be true', kind: 'claim', value: '4.9', note: 'Homepage app download band: “⭐ 4.9 · 100K+ Downloads”.' },
   { slug: 'claim-app-downloads', label: 'App downloads', group: 'Claims — must be true', kind: 'claim', value: '100K+', note: 'Homepage app download band.' },
+  { slug: 'contact-phone', label: 'Curxx helpline number', group: 'Contact', kind: 'text', value: '', note: 'Call button fallback when a doctor, clinic or lab has no number of its own. Digits with country code, e.g. 918047190108. Leave empty to hide.' },
+  { slug: 'contact-whatsapp', label: 'Curxx WhatsApp number', group: 'Contact', kind: 'text', value: '', note: 'WhatsApp button fallback when a doctor, clinic or lab has no WhatsApp number. Digits with country code, e.g. 919876543210. Leave empty to hide.' },
   { slug: 'url-app-store', label: 'App Store link', group: 'Links', kind: 'url', value: 'https://apps.apple.com', note: 'Homepage app download band.' },
   { slug: 'url-play-store', label: 'Google Play link', group: 'Links', kind: 'url', value: 'https://play.google.com', note: 'Homepage app download band.' },
   { slug: 'image-home-hero', label: 'Homepage hero photo', group: 'Images', kind: 'image', value: '/images/home-hero.jpg', note: 'Doctor portrait in the homepage hero. A full URL, or a path on the website.' },

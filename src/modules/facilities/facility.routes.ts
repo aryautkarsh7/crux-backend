@@ -34,7 +34,8 @@ const listQuery = z.object({
   ...pageQuery,
 });
 
-const SORTS = { distance: { distanceKm: 1 }, rating: { rating: -1 }, reviews: { reviewCount: -1 } } as const;
+// Admin-ranked centres lead the default orders (distance, rating).
+const SORTS = { distance: { rankScore: -1, distanceKm: 1 }, rating: { rankScore: -1, rating: -1 }, reviews: { reviewCount: -1 } } as const;
 const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({ ...toDto(d as { _id: unknown }), offersVideo: schedule?.video !== 'none' });
 
 /** One page of facilities ordered by real distance from a point. Cities have a few hundred at most. */
@@ -42,7 +43,7 @@ async function nearest(filter: Record<string, unknown>, origin: { lat: number; l
   const all = await FacilityModel.find(filter).limit(1000).lean();
   return all
     .map((f) => ({ ...f, distanceKm: f.geo?.lat != null && f.geo?.lng != null ? distanceKm(origin, { lat: f.geo.lat, lng: f.geo.lng }) : f.distanceKm }))
-    .sort((a, b) => a.distanceKm - b.distanceKm || a.slug.localeCompare(b.slug))
+    .sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0) || a.distanceKm - b.distanceKm || a.slug.localeCompare(b.slug))
     .slice((page - 1) * limit, page * limit);
 }
 
