@@ -42,7 +42,7 @@ const SORTS: Record<string, Record<string, 1 | -1>> = {
 
 // Catalogue data is public and changes rarely: let the CDN and browser cache it.
 const CATALOGUE_CACHE = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
-const SLOT_FIELDS = 'slug fee videoFee schedule freeVideo instant slotsThrough';
+const SLOT_FIELDS = 'slug fee videoFee schedule freeVideo instant slotsThrough bookable';
 
 /** Start/end of the requested availability window, defaulting to the next 7 days. */
 export function availabilityWindow(availability?: 'now' | 'today' | 'tomorrow' | 'next-7-days') {

@@ -49,17 +49,20 @@ type Log = (message: string) => void;
 
 type Upsertable = { bulkWrite: (ops: any[], opts?: any) => Promise<unknown>; distinct: (field: string, filter: object) => Promise<unknown[]> };
 
-/** Writes the seed docs, leaving alone anything the team created or edited in the admin panel. */
+/** Records the sync must never overwrite or delete: admin-managed ones and imports (e.g. from Doctar). */
+const PROTECTED = { $or: [{ managed: true }, { source: { $nin: [null, ''] } }] };
+
+/** Writes the seed docs, leaving alone anything the team created or edited in the admin panel, or imported. */
 const upsertAll = async (model: Upsertable, docs: readonly { slug: string }[]) => {
-  const managed = new Set((await model.distinct('slug', { managed: true })) as string[]);
+  const managed = new Set((await model.distinct('slug', PROTECTED)) as string[]);
   const writable = docs.filter((d) => !managed.has(d.slug));
   for (let i = 0; i < writable.length; i += 500) {
     await model.bulkWrite(writable.slice(i, i + 500).map((d) => ({ updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true } })), { ordered: false });
   }
 };
 
-/** Seed records that are no longer in the code data — never admin-managed ones. */
-const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true } });
+/** Seed records that are no longer in the code data — never admin-managed or imported ones. */
+const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true }, source: { $in: [null, ''] } });
 
 export async function syncCatalogue(log: Log = () => {}) {
   const started = Date.now();
@@ -219,8 +222,8 @@ export async function syncCatalogue(log: Log = () => {}) {
   const everyone = [...bangalore, ...roster].map((d) => ({ ...d, verified: true, slotsThrough: null }));
   await upsertAll(DoctorModel, everyone as never);
   await DoctorModel.deleteMany(stale(everyone.map((d) => d.slug)));
-  // Admin-added doctors keep their slots too.
-  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', { managed: true })) as string[])];
+  // Admin-added and imported doctors keep their slots too.
+  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', PROTECTED)) as string[])];
   step(`doctors ${everyone.length}`);
 
   // ---- Slots: schedules may have changed, so clear unbooked future slots; they regenerate on demand ----

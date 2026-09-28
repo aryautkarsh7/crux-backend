@@ -49,6 +49,14 @@ const doctorSchema = new Schema(
     rankScore: { type: Number, default: 0, index: true },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** False = listing only: no slots are generated and the profile offers Call / Visit instead of booking. */
+    bookable: { type: Boolean, default: true },
+    /** False when the fee is an estimate rather than confirmed by the doctor; shown as "Approx.". */
+    feeVerified: { type: Boolean, default: true },
+    /** Where an imported record came from ("doctar"); empty for seed and admin-created doctors. */
+    source: { type: String, default: '', index: true },
+    /** The source record's id, so re-running an import updates instead of duplicating. */
+    doctarId: { type: String, unique: true, sparse: true },
   },
   { timestamps: true, versionKey: false },
 );

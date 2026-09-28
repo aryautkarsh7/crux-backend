@@ -40,6 +40,10 @@ const facilitySchema = new Schema(
     gallery: { type: [String], default: [] },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** Where an imported record came from ("doctar"); empty for seed and admin-created facilities. */
+    source: { type: String, default: '', index: true },
+    /** The source record's id, so re-running an import updates instead of duplicating. */
+    doctarId: { type: String, unique: true, sparse: true },
   },
   { timestamps: true, versionKey: false },
 );

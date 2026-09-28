@@ -49,6 +49,8 @@ type Resource = {
   /** When set, only these fields can be changed (orders, appointments, users, leads). */
   editable?: string[];
   managed?: boolean;
+  /** Values for fields older records don't store yet (lean reads skip schema defaults), so forms show them right. */
+  readDefaults?: Doc;
   /** Derives dependent fields before a create or update. */
   prepare?: (body: Doc, existing: Doc | null) => Promise<Doc>;
   after?: (doc: Doc, action: 'create' | 'update' | 'delete') => Promise<void>;
@@ -112,7 +114,8 @@ const RESOURCES: Record<string, Resource> = {
   doctors: {
     model: DoctorModel, key: 'slug', managed: true, create: true, remove: true,
     search: ['name', 'clinicName', 'area', 'slug', 'registration'], sort: { updatedAt: -1 },
-    filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified'],
+    filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified', 'source'],
+    readDefaults: { bookable: true, feeVerified: true },
     prepare: prepareDoctor,
     after: async (doc, action) => {
       if (action === 'create') return;
@@ -124,7 +127,7 @@ const RESOURCES: Record<string, Resource> = {
   facilities: {
     model: FacilityModel, key: 'slug', managed: true, create: true, remove: true,
     search: ['name', 'area', 'slug', 'address'], sort: { updatedAt: -1 },
-    filters: ['city', 'type', 'category', 'emergency24x7', 'nabh', 'managed'],
+    filters: ['city', 'type', 'category', 'emergency24x7', 'nabh', 'managed', 'source'],
     prepare: async (body, existing) => {
       if (body.category && !body.type) body.type = FACILITY_TYPES.find((t) => t.name === body.category)?.group ?? existing?.type;
       if (!existing) body.shortName ??= body.name;
@@ -503,7 +506,7 @@ export async function adminRoutes(app: FastifyInstance) {
         r.model.find(filter).sort({ ...order, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
         r.model.countDocuments(filter),
       ]);
-      return { items: (items as Doc[]).map(toClient), total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
+      return { items: (items as Doc[]).map((d) => toClient({ ...r.readDefaults, ...d })), total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
     });
 
     secured.get('/:resource/:key', async (request) => {
@@ -511,7 +514,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const r = resourceOf(name);
       const doc = await r.model.findOne(lookupFilter(r, key)).lean();
       if (!doc) throw notFound('Record not found');
-      return { item: toClient(doc as Doc) };
+      return { item: toClient({ ...r.readDefaults, ...(doc as Doc) }) };
     });
 
     secured.post('/:resource', async (request, reply) => {

@@ -16,6 +16,8 @@ export type SlotSource = {
   freeVideo?: boolean | null;
   instant?: boolean | null;
   slotsThrough?: Date | null;
+  /** False = listing-only doctor (e.g. imported): never gets slots. Missing means bookable. */
+  bookable?: boolean | null;
   schedule?: { days?: number[] | null; sessions?: Session[] | null; perDay?: { day?: number | null; sessions?: Session[] | null }[] | null; step?: number | null; video?: string | null } | null;
 };
 
@@ -76,7 +78,7 @@ export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?
   const today = dayStart(now);
   // A query about today only needs today's slots; later days follow when someone opens a profile.
   const aheadFor = (d: SlotSource) => Math.min(days ?? Infinity, d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD);
-  const stale = doctors.filter((d) => !d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1));
+  const stale = doctors.filter((d) => d.bookable !== false && (!d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1)));
   if (!stale.length) return;
 
   const docs = [];

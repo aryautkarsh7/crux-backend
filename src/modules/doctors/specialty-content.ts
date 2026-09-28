@@ -31,7 +31,8 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
           minVideo: { $min: { $cond: [{ $ne: ['$schedule.video', 'none'] }, '$videoFee', null] } },
           video: { $sum: { $cond: [{ $ne: ['$schedule.video', 'none'] }, 1, 0] } },
           free: { $sum: { $cond: ['$freeVideo', 1, 0] } },
-          rating: { $avg: '$rating' },
+          // Doctors without reviews (e.g. new imports) have no rating yet; $avg skips the nulls.
+          rating: { $avg: { $cond: [{ $gt: ['$reviewCount', 0] }, '$rating', null] } },
           experience: { $avg: '$experienceYears' },
           reviews: { $sum: '$reviewCount' },
           female: { $sum: { $cond: [{ $eq: ['$gender', 'female'] }, 1, 0] } },
@@ -40,7 +41,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     ]),
     DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { city: city.slug, specialty: specialty.slug } }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
     DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { specialty: specialty.slug } }, { $group: { _id: '$city', count: { $sum: 1 } } }]),
-    DoctorModel.find(match, { slug: 1, name: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, fee: 1 }).sort({ rating: -1, reviewCount: -1 }).limit(5).lean(),
+    DoctorModel.find({ ...match, reviewCount: { $gt: 0 } }, { slug: 1, name: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, fee: 1, feeVerified: 1 }).sort({ rating: -1, reviewCount: -1 }).limit(5).lean(),
     FacilityModel.find({ city: city.slug, specialties: specialty.slug }, { slug: 1, name: 1, area: 1, type: 1 }).sort({ rating: -1 }).limit(6).lean(),
     SpecialtyModel.find({ slug: { $in: specialty.related ?? [] } }, { slug: 1, name: 1, plural: 1, icon: 1 }).lean(),
   ]);
@@ -66,7 +67,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
   const about = [
     `A ${name} ${specialty.description ? `is one of the ${lower(specialty.description)}` : 'is a specialist doctor'}. Patients in ${place} commonly see a ${name} for ${list(conditions.slice(0, 4).map(lower))}.`,
     count
-      ? `Consultation fees for ${plural} in ${place} range from ${inr(stats!.minFee)} to ${inr(stats!.maxFee)}, with an average of about ${inr(stats!.avgFee)}. Doctors listed here have an average of ${Math.round(stats!.experience)} years of experience and a ${(Math.round(stats!.rating * 10) / 10).toFixed(1)}★ average rating from ${stats!.reviews.toLocaleString('en-IN')} verified patient reviews.`
+      ? `Consultation fees for ${plural} in ${place} range from ${inr(stats!.minFee)} to ${inr(stats!.maxFee)}, with an average of about ${inr(stats!.avgFee)}. Doctors listed here have an average of ${Math.round(stats!.experience)} years of experience${stats!.reviews ? ` and a ${(Math.round(stats!.rating * 10) / 10).toFixed(1)}★ average rating from ${stats!.reviews.toLocaleString('en-IN')} verified patient reviews` : ''}.`
       : '',
     topAreas.length && !locality ? `You will find ${plural} across ${city.name}, including ${list(topAreas)}.` : '',
   ].filter(Boolean);
@@ -133,7 +134,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
       video: stats?.video ?? 0,
       free: stats?.free ?? 0,
       female: stats?.female ?? 0,
-      rating: stats ? Math.round(stats.rating * 10) / 10 : null,
+      rating: stats?.reviews ? Math.round(stats.rating * 10) / 10 : null,
       experience: stats ? Math.round(stats.experience) : null,
       reviews: stats?.reviews ?? 0,
     },
@@ -142,7 +143,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     conditions,
     whenToSee: specialty.whenToSee ?? [],
     faqs,
-    topDoctors: top.map((d) => ({ slug: d.slug, name: d.name, experienceYears: d.experienceYears, rating: d.rating, reviewCount: d.reviewCount, area: d.area, fee: d.fee })),
+    topDoctors: top.map((d) => ({ slug: d.slug, name: d.name, experienceYears: d.experienceYears, rating: d.rating, reviewCount: d.reviewCount, area: d.area, fee: d.fee, feeVerified: d.feeVerified !== false })),
     facilities: facilities.map((f) => ({ slug: f.slug, name: f.name, area: f.area, type: f.type })),
     localities,
     otherCities,
