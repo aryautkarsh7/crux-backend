@@ -96,6 +96,8 @@ function core(docs: Lite[], avail: Map<string, Availability>) {
   const withExp = docs.filter((d) => d.experienceYears > 0);
   return {
     total: docs.length,
+    /** Doctors a patient can book online (instant or request); the rest are Call / Visit only. */
+    bookableCount: docs.filter((d) => bookingModeOf(d) !== 'none').length,
     clinicCount: clinic.length,
     videoCount: video.length,
     clinicOnlyCount: docs.length - video.length,

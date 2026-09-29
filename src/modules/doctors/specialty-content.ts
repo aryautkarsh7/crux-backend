@@ -61,13 +61,13 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
   const offersVideo = specialty.video !== false && (stats?.video ?? 0) > 0;
 
   const intro = count
-    ? `Book an appointment with ${count} verified ${count === 1 ? name : plural} in ${place}. ${specialty.description ? `${specialty.description}.` : ''} Compare fees, experience and patient reviews, then book a clinic visit${offersVideo ? ' or an online video consultation' : ''} in under a minute.`
+    ? `Book an appointment with ${count} ${count === 1 ? name : plural} in ${place}. ${specialty.description ? `${specialty.description}.` : ''} Compare fees, experience and patient reviews, then book a clinic visit${offersVideo ? ' or an online video consultation' : ''} in under a minute.`
     : `We are adding ${plural} in ${place}. ${offersVideo ? `Meanwhile you can consult a ${name} online by video from anywhere in India.` : `See ${plural} in nearby areas below.`}`;
 
   const about = [
     `A ${name} ${specialty.description ? `is one of the ${lower(specialty.description)}` : 'is a specialist doctor'}. Patients in ${place} commonly see a ${name} for ${list(conditions.slice(0, 4).map(lower))}.`,
     count
-      ? `Consultation fees for ${plural} in ${place} range from ${inr(stats!.minFee)} to ${inr(stats!.maxFee)}, with an average of about ${inr(stats!.avgFee)}. Doctors listed here have an average of ${Math.round(stats!.experience)} years of experience${stats!.reviews ? ` and a ${(Math.round(stats!.rating * 10) / 10).toFixed(1)}★ average rating from ${stats!.reviews.toLocaleString('en-IN')} verified patient reviews` : ''}.`
+      ? `Consultation fees for ${plural} in ${place} range from ${inr(stats!.minFee)} to ${inr(stats!.maxFee)}, with an average of about ${inr(stats!.avgFee)}. Doctors listed here have an average of ${Math.round(stats!.experience)} years of experience${stats!.reviews ? ` and a ${(Math.round(stats!.rating * 10) / 10).toFixed(1)}★ average rating from ${stats!.reviews.toLocaleString('en-IN')} patient reviews` : ''}.`
       : '',
     topAreas.length && !locality ? `You will find ${plural} across ${city.name}, including ${list(topAreas)}.` : '',
   ].filter(Boolean);
@@ -81,7 +81,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     if (top.length) {
       faqs.push({
         question: `Who are the best ${plural} in ${place}?`,
-        answer: `Top-rated ${plural} in ${place} on Curxx include ${list(top.slice(0, 3).map((d) => `${d.name} (${d.experienceYears} yrs, ${d.rating.toFixed(1)}★)`))}. Ratings are based on verified patient reviews, and you can sort the list by rating, experience or fee.`,
+        answer: `Top-rated ${plural} in ${place} on Curxx include ${list(top.slice(0, 3).map((d) => `${d.name} (${d.experienceYears} yrs, ${d.rating.toFixed(1)}★)`))}. Ratings are based on patient reviews, and you can sort the list by rating, experience or fee.`,
       });
     }
   }
@@ -106,7 +106,7 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
   }
   faqs.push({
     question: `How do I book an appointment with a ${name} in ${place}?`,
-    answer: `Choose a ${name} from the list, pick a date and time on their profile, and confirm with your mobile number. You get an instant confirmation by SMS and can reschedule or cancel from My Appointments.`,
+    answer: `Choose a ${name} from the list, pick a date and time on their profile, and confirm with your mobile number. The booking shows in My Appointments, where you can reschedule or cancel it.`,
   });
 
   const otherCities = allCities().filter((c) => c.slug !== city.slug && (byCity.get(c.slug) ?? 0) > 0)
