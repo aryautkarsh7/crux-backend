@@ -22,6 +22,7 @@ import { orderRoutes } from './modules/orders/order.routes.js';
 import { pharmacyRoutes } from './modules/pharmacy/pharmacy.routes.js';
 import { recordRoutes } from './modules/records/record.routes.js';
 import { searchRoutes } from './modules/search/search.routes.js';
+import { seoRoutes } from './modules/seo/seo.routes.js';
 import { siteRoutes } from './modules/site/site.routes.js';
 import { triageRoutes } from './modules/triage/triage.routes.js';
 
@@ -112,6 +113,7 @@ export async function buildApp() {
   await app.register(searchRoutes, { prefix: '/api/v1' });
   await app.register(catalogueRoutes, { prefix: '/api/v1' });
   await app.register(siteRoutes, { prefix: '/api/v1' });
+  await app.register(seoRoutes, { prefix: '/api/v1' });
   await app.register(meRoutes, { prefix: '/api/v1/me' });
   await app.register(activityRoutes, { prefix: '/api/v1' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });

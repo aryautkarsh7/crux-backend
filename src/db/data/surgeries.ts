@@ -1,4 +1,5 @@
 /** Common planned surgeries, with typical cost ranges in a tier-1 city (tier-2 cities are ~15% lower). */
+import { TREATMENTS } from './treatments.js';
 
 export type SurgerySeed = {
   slug: string;
@@ -23,9 +24,16 @@ export type SurgerySeed = {
   departments: string[];
 };
 
-export const SURGERY_CATEGORIES = ['General & Laparoscopic', 'Proctology', 'Eye', 'Orthopaedics', 'Urology', 'Gynaecology', 'ENT', 'Cosmetic & Plastic', 'Heart', 'Weight Loss', 'Dental'];
+/** Unknown procedure time (records added from the procedure sheet): pages leave the fact out. */
+export const UNKNOWN_DURATION: [number, number] = [0, 0];
 
-export const SURGERIES: SurgerySeed[] = [
+export const SURGERY_CATEGORIES = [
+  'General & Laparoscopic', 'Proctology', 'Eye', 'Orthopaedics', 'Urology', 'Gynaecology', 'ENT', 'Cosmetic & Plastic', 'Heart', 'Weight Loss', 'Dental',
+  // Added with Diksha's procedure sheet (treatments.ts).
+  'Fertility', 'Vascular', 'Skin', 'Paediatric Surgery', 'Brain & Spine', 'Cancer Care', 'Transplant', 'Robotic Surgery',
+];
+
+const BASE_SURGERIES: SurgerySeed[] = [
   {
     slug: 'laser-piles-surgery', name: 'Laser Piles Surgery', category: 'Proctology', specialty: 'general-surgeon', icon: 'healing', popular: true,
     description: 'A minimally invasive laser procedure that shrinks piles from inside, with little pain and same-day discharge.',
@@ -306,5 +314,28 @@ export const SURGERIES: SurgerySeed[] = [
     departments: ['Implantology', 'General Dentistry'],
   },
 ];
+
+
+/**
+ * The full catalogue: the hand-written surgeries above, updated and extended by the procedure sheet.
+ * A sheet row for an existing slug refreshes its description, cost and stay (the richer steps, benefits
+ * and risks stay); new rows become procedures with only what the sheet provides.
+ */
+export const SURGERIES: SurgerySeed[] = (() => {
+  const bySlug = new Map(BASE_SURGERIES.map((s) => [s.slug, { ...s }]));
+  for (const t of TREATMENTS) {
+    const existing = bySlug.get(t.slug);
+    if (existing) {
+      Object.assign(existing, { description: t.description, cost: t.cost, stay: t.stay });
+      continue;
+    }
+    bySlug.set(t.slug, {
+      slug: t.slug, name: t.name, category: t.category, specialty: t.specialty, icon: t.icon, description: t.description,
+      treats: [], techniques: [], durationMinutes: UNKNOWN_DURATION, stay: t.stay, recovery: t.recovery ? `${t.recovery} for full recovery` : '',
+      anaesthesia: '', cost: t.cost, insurance: false, steps: [], benefits: [], risks: [], departments: [],
+    });
+  }
+  return [...bySlug.values()];
+})();
 
 export const SURGERY_BY_SLUG = new Map(SURGERIES.map((s) => [s.slug, s]));

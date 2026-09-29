@@ -117,6 +117,27 @@ export function describeSchedule(s: Schedule) {
   return [...groups].map(([label, days]) => `${dayList(days)} · ${label}`).join('; ');
 }
 
+/**
+ * The weekly hours as groups of days that share the same sessions, e.g.
+ * [{ days: 'Mon–Fri', hours: ['9:00 AM – 1:00 PM', '5:00 PM – 8:00 PM'] }, { days: 'Sat', hours: ['10:00 AM – 1:00 PM'] }].
+ * Days without sessions are left out; an empty schedule gives [].
+ */
+export function scheduleGroups(s: Partial<Pick<Schedule, 'days' | 'sessions' | 'perDay'>> | null | undefined) {
+  if (!s?.days?.length) return [];
+  const groups = new Map<string, { days: number[]; hours: string[]; allDay: boolean }>();
+  for (const day of [1, 2, 3, 4, 5, 6, 0].filter((d) => s.days!.includes(d))) {
+    const sessions = (s.perDay?.find((p) => p.day === day)?.sessions ?? s.sessions ?? []).filter((x) => x.start && x.end);
+    if (!sessions.length) continue;
+    const allDay = sessions.length === 1 && sessions[0]!.start === '00:00' && sessions[0]!.end === '24:00';
+    const hours = allDay ? ['24 hours'] : sessions.map((x) => `${toLabel(x.start)} – ${toLabel(x.end)}`);
+    const key = hours.join('|');
+    const group = groups.get(key) ?? { days: [], hours, allDay };
+    group.days.push(day);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((g) => ({ days: dayList(g.days), dayCount: g.days.length, hours: g.hours, allDay: g.allDay }));
+}
+
 /** Parses "9:00 AM – 1:00 PM, 4:00 PM – 7:00 PM" into sessions. */
 function parseOpd(opd: string): Session[] {
   const to24 = (t: string) => {
