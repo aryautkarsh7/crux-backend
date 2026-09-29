@@ -116,10 +116,30 @@ export async function catalogueRoutes(app: FastifyInstance) {
       surgeons: surgeons.map((d) => toDto(d)),
       related: allSurgeries().filter((s) => s.slug !== slug && s.category === surgery.category).map((s) => surgerySummary(s, city.tier)),
       otherCities: allCities().filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
+      // Only what we know: records added from the procedure sheet have no techniques, duration or insurance data.
       faqs: [
-        { question: `What is the cost of ${surgery.name.toLowerCase()} in ${city.name}?`, answer: `${surgery.name} in ${city.name} typically costs ${inr(low)} to ${inr(high)}, depending on the hospital, technique (${surgery.techniques.slice(0, 2).join(' or ')}), room type and insurance. Curxx care coordinators share an itemised estimate before you decide.` },
-        { question: `Is ${surgery.name.toLowerCase()} covered by insurance?`, answer: surgery.insurance ? `Yes, it is usually covered under health insurance when medically necessary. Partner hospitals in ${city.name} offer cashless treatment with most insurers, and we help with pre-authorisation.` : `It is usually considered elective and not covered by most insurance plans. No-cost EMI options are available at partner hospitals.` },
-        { question: `How long is the hospital stay and recovery?`, answer: `Hospital stay: ${surgery.stay}. Recovery: ${surgery.recovery}. The procedure itself takes about ${surgery.durationMinutes[0]}–${surgery.durationMinutes[1]} minutes under ${surgery.anaesthesia.toLowerCase()}.` },
+        {
+          question: `What is the cost of ${surgery.name.toLowerCase()} in ${city.name}?`,
+          answer: `${surgery.name} in ${city.name} is estimated to cost ${inr(low)} to ${inr(high)}, depending on the hospital, ${surgery.techniques.length ? `technique (${surgery.techniques.slice(0, 2).join(' or ')})` : 'technique'}, room type and insurance. Curxx care coordinators share an itemised estimate before you decide.`,
+        },
+        {
+          question: `Is ${surgery.name.toLowerCase()} covered by insurance?`,
+          answer: surgery.insurance
+            ? 'It is usually covered under health insurance when medically necessary, subject to your policy’s waiting periods and limits. We help with the insurance paperwork.'
+            : surgery.techniques.length || surgery.steps.length
+              ? 'It is usually considered elective and not covered by most insurance plans. Check your policy, or ask our coordinator to check with your insurer.'
+              : 'Coverage depends on your policy and on whether the procedure is medically necessary. Check your policy’s waiting periods and limits, or ask our coordinator to check with your insurer.',
+        },
+        ...(surgery.stay || surgery.recovery
+          ? [{
+              question: 'How long is the hospital stay and recovery?',
+              answer: [
+                surgery.stay ? `Hospital stay: ${surgery.stay}.` : '',
+                surgery.recovery ? `Recovery: ${surgery.recovery}.` : '',
+                surgery.durationMinutes[1] > 0 ? `The procedure itself takes about ${surgery.durationMinutes[0]}–${surgery.durationMinutes[1]} minutes${surgery.anaesthesia ? ` under ${surgery.anaesthesia.toLowerCase()}` : ''}.` : '',
+              ].filter(Boolean).join(' '),
+            }]
+          : []),
         { question: `How do I book ${surgery.name.toLowerCase()} with Curxx?`, answer: `Share your details in the free consultation form. A Curxx care coordinator calls you, books a surgeon consultation in ${city.name}, and helps with the estimate, insurance paperwork and admission.` },
       ],
     };
