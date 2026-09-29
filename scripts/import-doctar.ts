@@ -1,10 +1,13 @@
 /**
- * Imports admin-verified doctors from Doctar's staging database, plus the hospitals and clinics they
- * consult at, into Curxx's `doctors` and `facilities` collections.
+ * Imports admin-verified doctors from Doctar's database (DOCTAR_DB_URL), plus the hospitals and clinics
+ * they consult at, into Curxx's `doctors` and `facilities` collections (MONGODB_URI).
  *
  *   npm run import:doctar -- --dry-run --limit 20
- *   npm run import:doctar -- --only facilities
+ *   npm run import:doctar -- --limit 20 --db curxx-dev      (writes: --db must name the target database)
+ *   npm run import:doctar -- --only facilities --db curxx-dev
  *
+ * - Switching from Doctar staging to production only means changing DOCTAR_DB_URL.
+ * - Practo-scraped records (still present in Doctar staging) are skipped; see PRACTO below.
  * - Doctar is read-only: the script only ever calls find / aggregate / countDocuments there.
  * - Re-running is safe: records are upserted by `doctarId` and keep the slug they were given first.
  * - Imported doctors are listing-only (`bookable: false`), start with no rating or reviews, and are
@@ -31,6 +34,8 @@ const flag = (name: string) => {
 const DRY_RUN = args.includes('--dry-run');
 const LIMIT = flag('--limit') === undefined ? Infinity : Number(flag('--limit'));
 const ONLY = flag('--only') as 'doctors' | 'facilities' | undefined;
+/** Writes must name the Curxx database they expect (e.g. --db curxx-dev), so a wrong MONGODB_URI can't hit live. */
+const CONFIRM_DB = flag('--db');
 if (!(LIMIT === Infinity || (Number.isInteger(LIMIT) && LIMIT > 0))) throw new Error('--limit takes a positive whole number');
 if (ONLY && ONLY !== 'doctors' && ONLY !== 'facilities') throw new Error('--only takes "doctors" or "facilities"');
 
@@ -107,6 +112,25 @@ const FACILITY_CATEGORY: Record<string, string> = {
 /** Words that mark a business rather than a person ("Dental Secrets", "Alivio Physio Pvt Ltd"). */
 const ORGANISATION = /\b(pvt|private|ltd|limited|llp|inc|clinics?|hospitals?|centres?|centers?|care|dental|dentistry|physio|physiotherapy|diagnostics?|healthcare|health|foundation|trust|institute|polyclinic|nursing|labs?|laboratory|pharmacy|medical|medicare|speciality|specialty|multispeciality|wellness|enterprises?|solutions|services|associates|orthodontics|homoeopathy|homeopathy)\b|[&@\d]/i;
 
+/**
+ * Doctar removed Practo-scraped records from its production database, but staging still has them. A record
+ * is treated as Practo-origin when any field mentions Practo (hospitalSourceId / sourceUrl / sourceId are
+ * practo.com links; a few names and bios mention it too). Doctors whose clinic would come only from the
+ * scraped `hospitals[]` list are skipped as well. On production data these rules simply match nothing.
+ */
+const PRACTO = /practo/i;
+/** Field paths ("hospitals[].name") whose text mentions Practo. */
+function practoFields(value: unknown, path = '', out = new Set<string>()): Set<string> {
+  if (typeof value === 'string') {
+    if (PRACTO.test(value)) out.add(path || '(value)');
+  } else if (Array.isArray(value)) {
+    for (const v of value) practoFields(v, `${path}[]`, out);
+  } else if (value && typeof value === 'object' && !('_bsontype' in value) && !(value instanceof Date)) {
+    for (const [k, v] of Object.entries(value)) practoFields(v, path ? `${path}.${k}` : k, out);
+  }
+  return out;
+}
+
 /** Numbers Doctar fills in when it has none. */
 const PLACEHOLDER_PHONES = new Set(['8877772277']);
 /** Registration numbers Doctar generated (REG-12345, AUTO-…), not real council numbers. */
@@ -182,9 +206,10 @@ type DoctarHospital = {
   description?: string; logo?: string; coverImage?: string; gallery?: { url?: string }[];
 };
 
-const DOCTOR_FIELDS = { firstName: 1, lastName: 1, gender: 1, qualification: 1, experience: 1, specialization: 1, specializationList: 1, location: 1, locality: 1, bio: 1, avatar: 1, languages: 1, phone: 1, registrationNumber: 1, consultationFee: 1, feeSource: 1, hospitals: 1, extraData: 1 };
+// Everything except private fields, so the Practo check sees every field that could carry a marker.
+const DOCTOR_FIELDS = { password: 0, email: 0, subscription: 0, razorpayCustomerId: 0, documents: 0 };
 const SCHEDULE_FIELDS = { doctor: 1, hospital: 1, weeklySchedule: 1, slotDuration: 1, consultationFee: 1, isActive: 1 };
-const HOSPITAL_FIELDS = { name: 1, type: 1, city: 1, locality: 1, address: 1, pincode: 1, phone: 1, coordinates: 1, operatingHours: 1, emergency24x7: 1, totalBeds: 1, accreditations: 1, departments: 1, services: 1, amenities: 1, insuranceAccepted: 1, description: 1, logo: 1, coverImage: 1, gallery: 1 };
+const HOSPITAL_FIELDS = { email: 0, owner: 0, documents: 0 };
 
 type Doc = Record<string, unknown>;
 type Planned = { doctarId: string; doc: Doc; action: 'insert' | 'update' };
@@ -200,6 +225,9 @@ async function main() {
   await mongoose.connect(curxxUri, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 15_000 });
   const doctarConn = await mongoose.createConnection(doctarUri, { autoIndex: false, autoCreate: false, readPreference: 'secondaryPreferred', serverSelectionTimeoutMS: 15_000 }).asPromise();
   try {
+    const target = mongoose.connection.db!.databaseName;
+    if (!DRY_RUN && CONFIRM_DB !== target) throw new Error(`Refusing to write: MONGODB_URI points at Curxx database "${target}". Re-run with --db ${target} to confirm.`);
+    console.log(`Curxx database: ${target} · Doctar database: ${doctarConn.db!.databaseName} (read-only)`);
     // Read-only views of Doctar: nothing else is reachable from here.
     const doctar = (name: string) => {
       const c = doctarConn.db!.collection(name);
@@ -264,6 +292,7 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   const clinicSource = new Tally();
   const facilityNotes = new Tally();
   const organisationNames: string[] = [];
+  const practoMarkers = new Tally();
   let scanned = 0;
   let feeApprox = 0;
   let feeSourceMissing = 0;
@@ -277,6 +306,11 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
     const result = ((): { doc: Doc; action: 'insert' | 'update' } | { skip: string } => {
       const existing = existingFacility.get(id);
       if (existing?.managed) return { skip: 'edited in the admin panel — left as is' };
+      const practo = practoFields(h);
+      if (practo.size) {
+        for (const f of practo) practoMarkers.add(`facility · ${f}`);
+        return { skip: 'Practo origin' };
+      }
       const name = text(h.name);
       if (!name) return { skip: 'no name' };
       const city = cityBy.get(norm(h.city));
@@ -329,6 +363,8 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
           // No invented ratings: a facility starts unrated until patients review it.
           rating: 0,
           reviewCount: 0,
+          // Unranked like seed records (no stored rankScore); the schema default 0 would sort above them.
+          rankScore: null,
         },
       };
     })();
@@ -367,6 +403,12 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
       const skip = (reason: string) => skippedDoctors.add(reason);
       const existing = existingDoctor.get(id);
       if (existing?.managed) { skip('edited in the admin panel — left as is'); continue; }
+      const practo = practoFields(d);
+      if (practo.size) {
+        skip('Practo origin: a field mentions Practo');
+        for (const f of practo) practoMarkers.add(`doctor · ${f}`);
+        continue;
+      }
 
       const first = text(d.firstName).replace(/^dr\.?\s+/i, '');
       const fullName = `${first} ${text(d.lastName)}`.replace(/\s+/g, ' ').trim();
@@ -400,9 +442,14 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
         break;
       }
       const extraClinic = (d.extraData ?? []).find((x): x is { name: string; description: string } => typeof x === 'object' && x !== null && (x as { name?: unknown }).name === 'Clinic Name');
-      const clinicName = facility ? String(facility.doc.name) : text(d.hospitals?.[0]?.name) || text(extraClinic?.description);
+      if (!facility && !text(extraClinic?.description) && text(d.hospitals?.[0]?.name)) {
+        // The embedded hospitals[] list is the scraped one: a clinic known only from it isn't used.
+        skip('Practo origin: clinic only from the scraped hospitals[] list');
+        continue;
+      }
+      const clinicName = facility ? String(facility.doc.name) : text(extraClinic?.description);
       if (!clinicName) { skip('no clinic or hospital name'); continue; }
-      clinicSource.add(facility ? 'linked Doctar hospital (facilitySlug set)' : text(d.hospitals?.[0]?.name) ? 'hospital name on the doctor (no facility page)' : '"Clinic Name" in extraData (no facility page)');
+      clinicSource.add(facility ? 'linked Doctar hospital (facilitySlug set)' : '"Clinic Name" in extraData (no facility page)');
       const area = facility ? String(facility.doc.area) : areaFor(city, text(d.locality));
       if (!area) { skip('no usable locality'); continue; }
 
@@ -410,7 +457,8 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
       const scheduleFee = Number(schedule?.consultationFee);
       const fee = typeof d.consultationFee === 'number' && ownFee > 0 ? ownFee : scheduleFee > 0 ? scheduleFee : NaN;
       if (!Number.isFinite(fee) || fee < 50 || fee > 20_000) { skip('fee missing or out of range'); continue; }
-      const feeVerified = typeof d.consultationFee === 'number' && ownFee > 0 && d.feeSource !== 'system';
+      // Only a fee the doctor set themselves counts as confirmed; "system" or no feeSource shows as "Approx.".
+      const feeVerified = typeof d.consultationFee === 'number' && ownFee > 0 && d.feeSource != null && d.feeSource !== 'system';
       if (!feeVerified) feeApprox += 1;
       if (d.feeSource == null) feeSourceMissing += 1;
 
@@ -445,7 +493,8 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
         focusAreas: [],
         photoUrl: /^https?:\/\//.test(text(d.avatar)) ? text(d.avatar) : '',
         about: text(d.bio),
-        verified: true,
+        // `verified` means Curxx checked the credentials; Doctar's own check doesn't count, so no Curxx tick.
+        verified: false,
         schedule: curxxSchedule,
         consultHours: hours ? describeSchedule(curxxSchedule) : '',
         freeVideo: false,
@@ -453,6 +502,8 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
         slotsThrough: null,
         phone: phoneOf(d.phone),
         bookable: false,
+        // Unranked like seed records (no stored rankScore); the schema default 0 would put imports first.
+        rankScore: null,
       };
       doctors.push({ doctarId: id, doc, action: existing ? 'update' : 'insert' });
       if (facility) usedFacilities.set(String(facility.doc.doctarId), { doctarId: String(facility.doc.doctarId), ...facility });
@@ -537,19 +588,18 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   out.push('', `  Doctors${writeDoctors ? '' : ' (not written: --only facilities)'}: ${count(validDoctors, 'insert')} ${verb}inserted, ${count(validDoctors, 'update')} ${verb}updated, ${skippedDoctors.total} skipped`);
   out.push(...skippedDoctors.lines());
   if (organisationNames.length) out.push(`    Organisation names skipped, e.g.: ${organisationNames.join(' · ')}`);
+  if (practoMarkers.total) out.push('    Practo markers found (field · records):', ...practoMarkers.lines(15));
   out.push('    Clinic name taken from:', ...clinicSource.lines());
-  out.push(`    Fees: ${validDoctors.length - feeApprox} confirmed, ${feeApprox} shown as "Approx." (feeSource "system" or no own fee); ${feeSourceMissing} had no feeSource (treated as confirmed)`);
+  out.push(`    Fees: ${validDoctors.length - feeApprox} confirmed, ${feeApprox} shown as "Approx." (feeSource "system" or missing, or no own fee; ${feeSourceMissing} had no feeSource)`);
   if (unmatchedSpecialties.total) out.push('', '  Unmatched specialties (skipped):', ...unmatchedSpecialties.lines(30));
   if (unmatchedCities.total) out.push('', '  Unmatched cities (skipped):', ...unmatchedCities.lines(30));
   if (invalid.total) out.push('', '  Failed Curxx validation (skipped):', ...invalid.lines());
   out.push('', `  New data: ~${mb(newBytes)} including indexes (Atlas M0 limit 512 MB).`);
-  if (DRY_RUN) {
-    const pick = (doc: Doc, keys: string[]) => Object.fromEntries(keys.map((k) => [k, doc[k]]));
-    out.push('', '  Sample doctors:');
-    for (const d of validDoctors.slice(0, 3)) out.push(`    ${JSON.stringify(pick(d.doc, ['slug', 'name', 'specialty', 'city', 'area', 'clinicName', 'facilitySlug', 'fee', 'feeVerified', 'registration', 'consultHours', 'photoUrl']))}`);
-    out.push('  Sample facilities:');
-    for (const f of validFacilities.slice(0, 2)) out.push(`    ${JSON.stringify(pick(f.doc, ['slug', 'name', 'type', 'category', 'city', 'area', 'openHours', 'specialties']))}`);
-  }
+  const pick = (doc: Doc, keys: string[]) => Object.fromEntries(keys.map((k) => [k, doc[k]]));
+  out.push('', '  Sample doctors:');
+  for (const d of validDoctors.slice(0, 3)) out.push(`    ${JSON.stringify(pick(d.doc, ['slug', 'name', 'specialty', 'city', 'area', 'clinicName', 'facilitySlug', 'fee', 'feeVerified', 'registration', 'consultHours', 'photoUrl']))}`);
+  out.push('  Sample facilities:');
+  for (const f of validFacilities.slice(0, 2)) out.push(`    ${JSON.stringify(pick(f.doc, ['slug', 'name', 'type', 'category', 'city', 'area', 'openHours', 'specialties']))}`);
   console.log(out.join('\n'));
 }
 
