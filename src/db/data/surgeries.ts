@@ -331,7 +331,7 @@ export const SURGERIES: SurgerySeed[] = (() => {
     }
     bySlug.set(t.slug, {
       slug: t.slug, name: t.name, category: t.category, specialty: t.specialty, icon: t.icon, description: t.description,
-      treats: [], techniques: [], durationMinutes: UNKNOWN_DURATION, stay: t.stay, recovery: t.recovery ? `${t.recovery} for full recovery` : '',
+      treats: [], techniques: [], durationMinutes: UNKNOWN_DURATION, stay: t.stay, recovery: t.recovery ? `${t.recovery} (full recovery)` : '',
       anaesthesia: '', cost: t.cost, insurance: false, steps: [], benefits: [], risks: [], departments: [],
     });
   }
