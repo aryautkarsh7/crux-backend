@@ -10,6 +10,7 @@ import { buildApp } from '../src/app.js';
 import { syncCatalogue } from '../src/db/catalogue.js';
 import { connectDatabase } from '../src/db/connect.js';
 import { HOME_FAQS } from '../src/db/data/site-content.js';
+import { SURGERIES } from '../src/db/data/surgeries.js';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
@@ -93,7 +94,8 @@ describe('public site data', () => {
     assert.equal(home[0].slug, 'general-physician');
     const chips = r.conditions.filter((c: { popularOrder: number }) => c.popularOrder > 0).sort((a: { popularOrder: number }, b: { popularOrder: number }) => a.popularOrder - b.popularOrder);
     assert.deepEqual(chips.map((c: { popular: string }) => c.popular), ['Cough & Cold', 'Skin Acne', 'Depression & Anxiety', 'Stomach Ache', "Women's Health"]);
-    assert.equal(r.surgeries.length, 31);
+    // The hand-written surgeries plus Diksha's procedure sheet (data/treatments.ts).
+    assert.equal(r.surgeries.length, SURGERIES.length);
     assert.equal(r.surgeryCategories[0], 'General & Laparoscopic');
     assert.equal(r.facilityTypes.length, 19);
   });
