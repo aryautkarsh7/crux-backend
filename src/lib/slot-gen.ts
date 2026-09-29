@@ -1,5 +1,6 @@
 import { DoctorModel } from '../models/doctor.model.js';
 import { SlotModel } from '../models/slot.model.js';
+import { REQUEST_DAYS_AHEAD, bookingModeOf, requestSlotId } from './booking-mode.js';
 
 /** Days of slots kept ahead of today; online 24x7 doctors keep a shorter window (they have many slots). */
 const DAYS_AHEAD = 7;
@@ -16,8 +17,10 @@ export type SlotSource = {
   freeVideo?: boolean | null;
   instant?: boolean | null;
   slotsThrough?: Date | null;
-  /** False = listing-only doctor (e.g. imported): never gets slots. Missing means bookable. */
+  /** False = listing-only doctor: never gets slots. Missing means bookable. */
   bookable?: boolean | null;
+  /** Imported doctors ("doctar") take requests on computed times instead of stored slots; see booking-mode.ts. */
+  source?: string | null;
   schedule?: { days?: number[] | null; sessions?: Session[] | null; perDay?: { day?: number | null; sessions?: Session[] | null }[] | null; step?: number | null; video?: string | null } | null;
 };
 
@@ -78,7 +81,8 @@ export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?
   const today = dayStart(now);
   // A query about today only needs today's slots; later days follow when someone opens a profile.
   const aheadFor = (d: SlotSource) => Math.min(days ?? Infinity, d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD);
-  const stale = doctors.filter((d) => d.bookable !== false && (!d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1)));
+  // Only instant-booking doctors get stored slots; request doctors' times are computed (openRequestSlots).
+  const stale = doctors.filter((d) => bookingModeOf(d) === 'instant' && (!d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1)));
   if (!stale.length) return;
 
   const docs = [];
@@ -103,9 +107,53 @@ export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?
   for (const d of stale) d.slotsThrough = through.get(String(d._id)) ?? null;
 }
 
-/** Drops open slots that are already in the past, so the collection doesn't grow forever. */
+/** The times a request-mode doctor offers over the next days, from their weekly hours. Nothing is stored. */
+export function requestTimes(doctor: SlotSource, now = new Date(), days = REQUEST_DAYS_AHEAD) {
+  const today = dayStart(now);
+  const schedule = doctor.schedule ?? {};
+  const out = [];
+  for (let i = 0; i < days; i += 1) {
+    const day = addDays(today, i);
+    // slotsForDay falls back to default hours for a day without sessions; a real doctor's hours are never invented.
+    const own = schedule.perDay?.find((p) => p.day === day.getDay())?.sessions;
+    if (!schedule.days?.includes(day.getDay()) || !(own?.length || schedule.sessions?.length)) continue;
+    out.push(...slotsForDay({ ...doctor, freeVideo: false }, day, now));
+  }
+  return out;
+}
+
+/**
+ * Request times still free for each request-mode doctor: computed times minus those already booked or
+ * currently held. Only a time someone picks becomes a stored slot, so thousands of imported doctors
+ * cost no storage until patients use them.
+ */
+export async function openRequestSlots(doctors: SlotSource[], now = new Date(), days = REQUEST_DAYS_AHEAD) {
+  const out = new Map<string, { id: string; startsAt: Date; mode: 'clinic' | 'video'; fee: number; free: false }[]>();
+  const requestable = doctors.filter((d) => bookingModeOf(d) === 'request');
+  if (!requestable.length) return out;
+  const taken = await SlotModel.find(
+    {
+      doctorSlug: { $in: requestable.map((d) => d.slug) },
+      startsAt: { $gte: now, $lte: addDays(dayStart(now), days) },
+      $or: [{ status: 'booked' }, { status: 'held', holdExpiresAt: { $gte: now } }],
+    },
+    { doctorSlug: 1, startsAt: 1 },
+  ).lean();
+  const busy = new Set(taken.map((t) => `${t.doctorSlug}|${t.startsAt.getTime()}`));
+  for (const d of requestable) {
+    out.set(
+      d.slug,
+      requestTimes(d, now, days)
+        .filter((t) => !busy.has(`${d.slug}|${t.startsAt.getTime()}`))
+        .map((t) => ({ id: requestSlotId(d.slug, t.startsAt), startsAt: t.startsAt, mode: t.mode, fee: t.fee, free: false as const })),
+    );
+  }
+  return out;
+}
+
+/** Drops unbooked slots that are already in the past (open, or a hold that lapsed), so the collection doesn't grow forever. */
 export async function pruneSlots(now = new Date()) {
   const cutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-  const { deletedCount } = await SlotModel.deleteMany({ status: 'open', startsAt: { $lt: cutoff } });
+  const { deletedCount } = await SlotModel.deleteMany({ startsAt: { $lt: cutoff }, $or: [{ status: 'open' }, { status: 'held', holdExpiresAt: { $lt: now } }] });
   return deletedCount ?? 0;
 }

@@ -50,7 +50,8 @@ function roomState(a: { mode: string; startsAt: Date; status: string }) {
 }
 
 const shape = (a: Record<string, any>) => {
-  const { doctor, ...rest } = a;
+  // notify names the doctor's private contact and requestIp is internal: admin-only, never sent to patients.
+  const { doctor, notify: _notify, requestIp: _ip, ...rest } = a;
   const status = statusOf(a as never);
   return {
     ...toDto(rest as { _id: unknown }, true),

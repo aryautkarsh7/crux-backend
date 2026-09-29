@@ -5,7 +5,8 @@ import { FACILITY_TYPES } from '../../db/data/facility-network.js';
 import { notFound } from '../../lib/errors.js';
 import { distanceKm, locate } from '../../lib/geo.js';
 import { CATALOGUE_CACHE, escapeRegex, pageQuery, paged, toDto } from '../../lib/http.js';
-import { ensureSlots } from '../../lib/slot-gen.js';
+import { bookingModeOf } from '../../lib/booking-mode.js';
+import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
@@ -36,7 +37,11 @@ const listQuery = z.object({
 
 // Admin-ranked centres lead the default orders (distance, rating).
 const SORTS = { distance: { rankScore: -1, distanceKm: 1 }, rating: { rankScore: -1, rating: -1 }, reviews: { reviewCount: -1 } } as const;
-const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({ ...toDto(d as { _id: unknown }), offersVideo: schedule?.video !== 'none' });
+const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({
+  ...toDto(d as { _id: unknown }),
+  offersVideo: schedule?.video !== 'none',
+  booking: bookingModeOf({ source: d.source, bookable: d.bookable, schedule }),
+});
 
 /** One page of facilities ordered by real distance from a point. Cities have a few hundred at most. */
 async function nearest(filter: Record<string, unknown>, origin: { lat: number; lng: number }, page: number, limit: number) {
@@ -116,6 +121,7 @@ export async function facilityRoutes(app: FastifyInstance) {
       { $group: { _id: '$doctorSlug', startsAt: { $first: '$startsAt' } } },
     ]);
     const nextBySlug = new Map(next.map((n) => [n._id, n.startsAt]));
+    for (const [doctorSlug, open] of await openRequestSlots(doctors as never)) if (open[0]) nextBySlug.set(doctorSlug, open[0].startsAt);
     const nearby = await FacilityModel.find({ city: facility.city, slug: { $ne: slug }, category: facility.category }, { slug: 1, name: 1, area: 1, category: 1, rating: 1, type: 1 })
       .sort({ rating: -1 })
       .limit(4)
