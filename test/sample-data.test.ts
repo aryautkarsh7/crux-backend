@@ -165,6 +165,18 @@ describe('sample data hidden from the website', () => {
     assert.ok(india.specialties.includes('general-physician'));
   });
 
+  test('specialty copy only promises online booking when someone can be booked online', async () => {
+    const res = await get('/specialties/general-physician?city=mumbai&area=andheri-west');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.stats.doctors, await all(() => DoctorModel.countDocuments({ city: 'mumbai', specialty: 'general-physician', area: 'Andheri West', ...REAL })));
+    const text = JSON.stringify([res.body.intro, res.body.faqs]);
+    if ((await all(() => DoctorModel.countDocuments({ city: 'mumbai', specialty: 'general-physician', area: 'Andheri West', ...REAL, source: { $in: [null, ''] } }))) === 0) {
+      assert.doesNotMatch(text, /under a minute|pick a date and time/);
+      assert.match(text, /call the clinic/i);
+      assert.match(text, /approx/, 'unconfirmed fees are called estimates');
+    }
+  });
+
   test('conditions pages say when nobody is listed yet', async () => {
     const res = await get('/conditions/acne?city=patna');
     assert.equal(res.status, 200);

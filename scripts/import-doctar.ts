@@ -120,6 +120,11 @@ const ORGANISATION = /\b(pvt|private|ltd|limited|llp|inc|clinics?|hospitals?|cen
  * scraped `hospitals[]` list are skipped as well. On production data these rules simply match nothing.
  */
 const PRACTO = /practo/i;
+/**
+ * Most of staging is scraped (24k of 31k doctors): skip records whose source id or URL names Practo in the
+ * query itself, so they aren't downloaded. Anything this excludes the full field scan below would skip too.
+ */
+const NOT_PRACTO_SOURCE = { $nor: [{ sourceId: PRACTO }, { hospitalSourceId: PRACTO }, { sourceUrl: PRACTO }] };
 /** Field paths ("hospitals[].name") whose text mentions Practo. */
 function practoFields(value: unknown, path = '', out = new Set<string>()): Set<string> {
   if (typeof value === 'string') {
@@ -378,7 +383,7 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   // ---- Doctors ----
   const doctors: Planned[] = [];
   const usedFacilities = new Map<string, Planned>();
-  const cursor = doctar('doctors').find({ isAdminVerified: true }, { projection: DOCTOR_FIELDS, sort: { _id: 1 }, batchSize: 500 });
+  const cursor = doctar('doctors').find({ isAdminVerified: true, ...NOT_PRACTO_SOURCE }, { projection: DOCTOR_FIELDS, sort: { _id: 1 }, batchSize: 500 });
   const chunkSize = Math.min(500, Number.isFinite(LIMIT) ? Math.max(50, LIMIT * 5) : 500);
   let chunk: DoctarDoctor[] = [];
   let done = false;
@@ -585,7 +590,11 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   const verb = DRY_RUN ? 'would be ' : '';
   const out: string[] = [];
   out.push('', `Doctar → Curxx import${DRY_RUN ? '  (DRY RUN: nothing written)' : ''}${Number.isFinite(LIMIT) ? `  --limit ${LIMIT}` : ''}${ONLY ? `  --only ${ONLY}` : ''}`);
-  out.push(`  Scanned ${scanned} admin-verified Doctar doctors (of ${await doctar('doctors').countDocuments({ isAdminVerified: true })}).`);
+  const [verified, notPracto] = await Promise.all([
+    doctar('doctors').countDocuments({ isAdminVerified: true }),
+    doctar('doctors').countDocuments({ isAdminVerified: true, ...NOT_PRACTO_SOURCE }),
+  ]);
+  out.push(`  Scanned ${scanned} admin-verified Doctar doctors (of ${verified}; ${verified - notPracto} more skipped in the query: Practo source id or URL).`);
   out.push('', `  Facilities${writeFacilities ? '' : ' (not written: --only doctors)'}: ${count(validFacilities, 'insert')} ${verb}inserted, ${count(validFacilities, 'update')} ${verb}updated`);
   out.push(`    Linked Doctar hospitals not imported: ${skippedFacilities.total}`, ...skippedFacilities.lines(12));
   if (facilityNotes.total) out.push('    Type overrides:', ...facilityNotes.lines());

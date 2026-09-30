@@ -6,6 +6,8 @@ import { cities as allCities, conditions as allConditions, surgeries as allSurge
 import { ArticleModel } from '../../models/article.model.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
+import { LabTestModel } from '../../models/lab-test.model.js';
+import { MedicineModel } from '../../models/medicine.model.js';
 import { surgeryStats } from './surgery-stats.js';
 
 const CACHE_MS = 10 * 60 * 1000;
@@ -14,10 +16,12 @@ type Dated = { slug: string; updatedAt?: Date | null };
 const dated = (d: Dated) => ({ slug: d.slug, updatedAt: d.updatedAt ?? null });
 
 async function compute() {
-  const [doctors, facilities, articles] = await Promise.all([
+  const [doctors, facilities, articles, labTests, medicines] = await Promise.all([
     DoctorModel.find({}, { slug: 1, city: 1, specialty: 1, area: 1, updatedAt: 1 }).lean(),
     FacilityModel.find({}, { slug: 1, city: 1, type: 1, updatedAt: 1 }).lean(),
     ArticleModel.find({}, { slug: 1, updatedAt: 1 }).lean(),
+    LabTestModel.find({}, { slug: 1, updatedAt: 1 }).lean(),
+    MedicineModel.find({}, { slug: 1, updatedAt: 1 }).lean(),
   ]);
 
   const cities = [];
@@ -53,6 +57,8 @@ async function compute() {
     doctors: doctors.map(dated),
     facilities: facilities.map(dated),
     articles: articles.map(dated),
+    labTests: labTests.map(dated),
+    medicines: medicines.map(dated),
     generatedAt: new Date(),
   };
 }
