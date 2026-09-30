@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType } from 'mongoose';
+import { addedOrImported, hideSampleData } from '../lib/sample-data.js';
 
 const doctorSchema = new Schema(
   {
@@ -49,6 +50,16 @@ const doctorSchema = new Schema(
     rankScore: { type: Number, default: 0, index: true },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** False = listing only: no slots are generated and the profile offers Call / Visit instead of booking. */
+    bookable: { type: Boolean, default: true },
+    /** False when the fee is an estimate rather than confirmed by the doctor; shown as "Approx.". */
+    feeVerified: { type: Boolean, default: true },
+    /** Where an imported record came from ("doctar"); empty for seed and admin-created doctors. */
+    source: { type: String, default: '', index: true },
+    /** The source record's id, so re-running an import updates instead of duplicating. */
+    doctarId: { type: String, unique: true, sparse: true },
+    /** Generated seed doctor: hidden from the website unless SHOW_SAMPLE_DATA is on (lib/sample-data.ts). */
+    sample: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
@@ -57,6 +68,7 @@ const doctorSchema = new Schema(
 doctorSchema.index({ city: 1, specialty: 1, fee: 1 });
 doctorSchema.index({ city: 1, specialty: 1, experienceYears: -1 });
 doctorSchema.index({ name: 'text', clinicName: 'text', area: 'text' });
+hideSampleData(doctorSchema, addedOrImported);
 
 export type Doctor = InferSchemaType<typeof doctorSchema>;
 export const DoctorModel = model('Doctor', doctorSchema);

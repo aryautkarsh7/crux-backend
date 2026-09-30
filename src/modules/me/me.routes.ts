@@ -101,7 +101,7 @@ export async function meRoutes(app: FastifyInstance) {
     const userId = request.user.sub;
     const now = Date.now();
     const [appointments, orders, records, grants] = await Promise.all([
-      AppointmentModel.find({ user: userId, status: 'confirmed', startsAt: { $gte: new Date(now - 3_600_000), $lte: new Date(now + 3 * 86_400_000) } }).sort({ startsAt: 1 }).limit(5).populate('doctor', 'name clinicName area').lean(),
+      AppointmentModel.find({ user: userId, status: { $in: ['confirmed', 'requested'] }, startsAt: { $gte: new Date(now - 3_600_000), $lte: new Date(now + 3 * 86_400_000) } }).sort({ startsAt: 1 }).limit(5).populate('doctor', 'name clinicName area').lean(),
       OrderModel.find({ user: userId, createdAt: { $gte: new Date(now - 7 * 86_400_000) } }).sort({ createdAt: -1 }).limit(5).lean(),
       HealthRecordModel.find({ user: userId, date: { $gte: new Date(now - 30 * 86_400_000) } }).sort({ date: -1 }).limit(3).lean(),
       AccessGrantModel.find({ user: userId, status: 'active', expiresAt: { $gte: new Date(now), $lte: new Date(now + 7 * 86_400_000) } }).lean(),
@@ -110,6 +110,10 @@ export async function meRoutes(app: FastifyInstance) {
     const items: Notification[] = [];
     for (const a of appointments as any[]) {
       const when = new Date(a.startsAt).toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+      if (a.status === 'requested') {
+        items.push({ id: `apt-${a._id}`, icon: 'schedule', title: `Booking requested · ${when}`, body: `Waiting for ${a.doctor?.name ?? 'the clinic'} to confirm`, href: '/account', at: a.startsAt, tone: 'warning' });
+        continue;
+      }
       items.push({ id: `apt-${a._id}`, icon: a.mode === 'video' ? 'videocam' : a.mode === 'audio' ? 'call' : 'event_available', title: `${a.mode === 'video' ? 'Video consult' : a.mode === 'audio' ? 'Phone consultation' : 'Clinic visit'} · ${when}`, body: `${a.doctor?.name ?? 'Your doctor'}${a.mode === 'clinic' && a.doctor?.clinicName ? ` · ${a.doctor.clinicName}, ${a.doctor.area}` : ''}`, href: a.mode === 'clinic' ? '/account' : `/consult/lobby/${a._id}`, at: a.startsAt, tone: 'info' });
     }
     for (const o of orders) {
@@ -130,7 +134,7 @@ export async function meRoutes(app: FastifyInstance) {
   app.get('/summary', async (request) => {
     const userId = request.user.sub;
     const [upcoming, orders, records, grants] = await Promise.all([
-      AppointmentModel.countDocuments({ user: userId, status: 'confirmed', startsAt: { $gte: new Date() } }),
+      AppointmentModel.countDocuments({ user: userId, status: { $in: ['confirmed', 'requested'] }, startsAt: { $gte: new Date() } }),
       OrderModel.countDocuments({ user: userId, status: { $ne: 'cancelled' } }),
       HealthRecordModel.countDocuments({ user: userId }),
       AccessGrantModel.countDocuments({ user: userId, status: 'active', expiresAt: { $gte: new Date() } }),

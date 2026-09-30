@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { scheduleGroups } from '../../db/data/doctor-network.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { cities as allCities, cityBySlug, conditions as allConditions, resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
-import { ensureSlots } from '../../lib/slot-gen.js';
+import { bookingModeOf } from '../../lib/booking-mode.js';
+import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
@@ -42,7 +44,7 @@ const SORTS: Record<string, Record<string, 1 | -1>> = {
 
 // Catalogue data is public and changes rarely: let the CDN and browser cache it.
 const CATALOGUE_CACHE = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
-const SLOT_FIELDS = 'slug fee videoFee schedule freeVideo instant slotsThrough';
+const SLOT_FIELDS = 'slug fee videoFee schedule freeVideo instant slotsThrough bookable source';
 
 /** Start/end of the requested availability window, defaulting to the next 7 days. */
 export function availabilityWindow(availability?: 'now' | 'today' | 'tomorrow' | 'next-7-days') {
@@ -67,7 +69,13 @@ export function availabilityWindow(availability?: 'now' | 'today' | 'tomorrow' |
 
 export const resolveSpecialtySlug = (slug?: string) => (slug ? SPECIALTY_ALIASES[slug] ?? slug : slug);
 
-const dto = ({ _id, createdAt: _c, updatedAt: _u, schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({ id: String(_id), ...d, offersVideo: schedule?.video !== 'none' });
+const dto = ({ _id, createdAt: _c, updatedAt: _u, schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({
+  id: String(_id),
+  ...d,
+  offersVideo: schedule?.video !== 'none',
+  /** instant (book & pay) · request (send a request, the clinic confirms) · none (Call / Visit). */
+  booking: bookingModeOf({ source: d.source, bookable: d.bookable, schedule }),
+});
 
 export async function doctorRoutes(app: FastifyInstance) {
   // ---- Cities ----
@@ -243,6 +251,12 @@ export async function doctorRoutes(app: FastifyInstance) {
         ])
       : [];
     const nextBySlug = new Map(nextSlots.map((s) => [s._id, s]));
+    // Request-mode doctors have no stored slots: their next free time is computed (clinic only, never free).
+    const requestSlots = !free && mode !== 'video' && availability !== 'now' ? await openRequestSlots(doctors as never) : new Map();
+    for (const [slug, open] of requestSlots) {
+      const first = open[0];
+      if (first) nextBySlug.set(slug, { _id: slug, startsAt: first.startsAt, mode: first.mode, fee: first.fee, free: false, slotId: first.id });
+    }
 
     const facetBase: Record<string, unknown> = everywhere ? {} : { city };
     if (specialty && specialty !== 'doctors') facetBase.specialty = specialty;
@@ -302,6 +316,8 @@ export async function doctorRoutes(app: FastifyInstance) {
         specialtyName: specialtyDoc?.name ?? doctor.specialty,
         specialtyPlural: specialtyDoc?.plural ?? doctor.specialty,
         offersVideo: doctor.schedule?.video !== 'none',
+        /** Weekly hours grouped by day, for the profile's timings section and FAQ. */
+        timings: scheduleGroups(doctor.schedule as never),
         // Always computed from the reviews, so every screen shows the same numbers.
         reviewSummary: { average: rating[0] ? Math.round(rating[0].average * 10) / 10 : doctor.rating, total: rating[0]?.total ?? 0 },
       },
@@ -320,6 +336,12 @@ export async function doctorRoutes(app: FastifyInstance) {
 
     const doctor = await DoctorModel.findOne({ slug }, SLOT_FIELDS).lean();
     if (!doctor) throw notFound('Doctor not found');
+    const booking = bookingModeOf(doctor);
+    if (booking === 'none') return { slots: [] };
+    if (booking === 'request') {
+      const open = (await openRequestSlots([doctor] as never, new Date(), Math.min(days, 7))).get(slug) ?? [];
+      return { slots: open.filter((s) => !mode || s.mode === mode) };
+    }
     await ensureSlots([doctor] as never);
 
     const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);

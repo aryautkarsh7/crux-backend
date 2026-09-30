@@ -11,6 +11,7 @@ import { SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { cities, conditions, reloadCatalogue, surgeries } from '../../lib/catalogue-store.js';
 import { HttpError, badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
+import { withSampleData } from '../../lib/sample-data.js';
 import { embedFor } from '../activity/activity.routes.js';
 import { InteractionModel, LoginEventModel, ReportModel, VideoModel } from '../../models/activity.model.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
@@ -49,6 +50,8 @@ type Resource = {
   /** When set, only these fields can be changed (orders, appointments, users, leads). */
   editable?: string[];
   managed?: boolean;
+  /** Values for fields older records don't store yet (lean reads skip schema defaults), so forms show them right. */
+  readDefaults?: Doc;
   /** Derives dependent fields before a create or update. */
   prepare?: (body: Doc, existing: Doc | null) => Promise<Doc>;
   after?: (doc: Doc, action: 'create' | 'update' | 'delete') => Promise<void>;
@@ -112,7 +115,8 @@ const RESOURCES: Record<string, Resource> = {
   doctors: {
     model: DoctorModel, key: 'slug', managed: true, create: true, remove: true,
     search: ['name', 'clinicName', 'area', 'slug', 'registration'], sort: { updatedAt: -1 },
-    filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified'],
+    filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified', 'source', 'sample'],
+    readDefaults: { bookable: true, feeVerified: true, sample: false },
     prepare: prepareDoctor,
     after: async (doc, action) => {
       if (action === 'create') return;
@@ -124,7 +128,8 @@ const RESOURCES: Record<string, Resource> = {
   facilities: {
     model: FacilityModel, key: 'slug', managed: true, create: true, remove: true,
     search: ['name', 'area', 'slug', 'address'], sort: { updatedAt: -1 },
-    filters: ['city', 'type', 'category', 'emergency24x7', 'nabh', 'managed'],
+    filters: ['city', 'type', 'category', 'emergency24x7', 'nabh', 'managed', 'source', 'sample'],
+    readDefaults: { sample: false },
     prepare: async (body, existing) => {
       if (body.category && !body.type) body.type = FACILITY_TYPES.find((t) => t.name === body.category)?.group ?? existing?.type;
       if (!existing) body.shortName ??= body.name;
@@ -176,7 +181,8 @@ const RESOURCES: Record<string, Resource> = {
   },
   reviews: {
     model: ReviewModel, key: '_id', managed: true, create: true, remove: true,
-    search: ['author', 'text', 'doctorSlug'], sort: { createdAt: -1 }, filters: ['doctorSlug', 'rating', 'mode', 'verified'],
+    search: ['author', 'text', 'doctorSlug'], sort: { createdAt: -1 }, filters: ['doctorSlug', 'rating', 'mode', 'verified', 'sample'],
+    readDefaults: { sample: false },
     after: async (doc) => {
       await refreshDoctorRatings([doc.doctorSlug]);
     },
@@ -210,7 +216,8 @@ const RESOURCES: Record<string, Resource> = {
   },
   testimonials: {
     model: TestimonialModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'text', 'location'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published'],
+    search: ['name', 'text', 'location'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published', 'sample'],
+    readDefaults: { sample: false },
     prepare: async (body, existing) => {
       const name = body.name ?? existing?.name;
       if (!existing && !body.initials && name) body.initials = String(name).replace(/^Dr\.?\s+/i, '').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
@@ -345,6 +352,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.register(async (secured) => {
     secured.addHook('preHandler', requireAdmin);
+    // The admin panel works on every record, including sample data the website hides (lib/sample-data.ts).
+    secured.addHook('onRoute', (route) => {
+      const handler = route.handler;
+      route.handler = function (this: FastifyInstance, request, reply) {
+        return withSampleData(() => handler.call(this, request, reply));
+      };
+    });
     secured.addHook('onSend', async (_request, reply) => {
       reply.header('cache-control', 'no-store');
     });
@@ -503,7 +517,7 @@ export async function adminRoutes(app: FastifyInstance) {
         r.model.find(filter).sort({ ...order, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
         r.model.countDocuments(filter),
       ]);
-      return { items: (items as Doc[]).map(toClient), total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
+      return { items: (items as Doc[]).map((d) => toClient({ ...r.readDefaults, ...d })), total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
     });
 
     secured.get('/:resource/:key', async (request) => {
@@ -511,7 +525,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const r = resourceOf(name);
       const doc = await r.model.findOne(lookupFilter(r, key)).lean();
       if (!doc) throw notFound('Record not found');
-      return { item: toClient(doc as Doc) };
+      return { item: toClient({ ...r.readDefaults, ...(doc as Doc) }) };
     });
 
     secured.post('/:resource', async (request, reply) => {

@@ -4,6 +4,7 @@ import { FACILITY_TYPES } from '../../db/data/facility-network.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { cities, conditions, surgeries, surgeryCategories } from '../../lib/catalogue-store.js';
 import { CATALOGUE_CACHE } from '../../lib/http.js';
+import { sampleHidden } from '../../lib/sample-data.js';
 import { DoctorModel } from '../../models/doctor.model.js';
 import { FacilityModel } from '../../models/facility.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
@@ -54,9 +55,12 @@ const published = { published: { $ne: false } };
 const strip = <T extends Record<string, unknown>>({ _id: _i, managed: _m, createdAt: _c, updatedAt: _u, published: _p, ...rest }: T) => rest;
 
 export async function siteRoutes(app: FastifyInstance) {
-  /** Editable single values: claims, links, images. */
+  /**
+   * Editable single values: claims, links, images. Without sample data, a claim shows only once someone
+   * has confirmed it by saving it in the admin panel: the seeded ones ("1.2M+ consultations") are examples.
+   */
   app.get('/site/settings', async (_request, reply) => {
-    const settings = await SiteSettingModel.find({}, { slug: 1, value: 1 }).lean();
+    const settings = await SiteSettingModel.find(sampleHidden() ? { $or: [{ kind: { $ne: 'claim' } }, { managed: true }] } : {}, { slug: 1, value: 1 }).lean();
     reply.header('cache-control', CATALOGUE_CACHE);
     return { settings: Object.fromEntries(settings.map((s) => [s.slug, s.value])) };
   });

@@ -21,7 +21,9 @@ import { generateReviews } from './data/reviews.js';
 import * as SITE from './data/site-content.js';
 import { SPECIALTIES } from './data/specialties.js';
 import { SURGERIES, SURGERY_CATEGORIES } from './data/surgeries.js';
+import { env } from '../config/env.js';
 import { SURGERY_CATEGORIES_SLUG, reloadCatalogue } from '../lib/catalogue-store.js';
+import { withSampleData } from '../lib/sample-data.js';
 import { AccessGrantModel } from '../models/access-grant.model.js';
 import { AppointmentModel } from '../models/appointment.model.js';
 import { CityModel, ConditionModel, SurgeryModel } from '../models/catalogue.model.js';
@@ -43,25 +45,42 @@ import { SpecialtyModel } from '../models/specialty.model.js';
 import { UserModel } from '../models/user.model.js';
 
 /** Bump whenever the data files change; the next server start re-syncs the live database. */
-export const DATA_VERSION = '2026-09-25.2';
+export const DATA_VERSION = '2026-09-30.3';
 
 type Log = (message: string) => void;
 
 type Upsertable = { bulkWrite: (ops: any[], opts?: any) => Promise<unknown>; distinct: (field: string, filter: object) => Promise<unknown[]> };
 
-/** Writes the seed docs, leaving alone anything the team created or edited in the admin panel. */
+/** Records the sync must never overwrite or delete: admin-managed ones and imports (e.g. from Doctar). */
+const PROTECTED = { $or: [{ managed: true }, { source: { $nin: [null, ''] } }] };
+
+/** Writes the seed docs, leaving alone anything the team created or edited in the admin panel, or imported. */
 const upsertAll = async (model: Upsertable, docs: readonly { slug: string }[]) => {
-  const managed = new Set((await model.distinct('slug', { managed: true })) as string[]);
+  const managed = new Set((await model.distinct('slug', PROTECTED)) as string[]);
   const writable = docs.filter((d) => !managed.has(d.slug));
   for (let i = 0; i < writable.length; i += 500) {
     await model.bulkWrite(writable.slice(i, i + 500).map((d) => ({ updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true } })), { ordered: false });
   }
 };
 
-/** Seed records that are no longer in the code data — never admin-managed ones. */
-const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true } });
+/** Seed records that are no longer in the code data — never admin-managed or imported ones. */
+const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true }, source: { $in: [null, ''] } });
 
-export async function syncCatalogue(log: Log = () => {}) {
+/**
+ * Seed doctors, facilities, reviews and testimonials are sample data (lib/sample-data.ts). With
+ * SHOW_SAMPLE_DATA off the sync never writes, restores or deletes them, so a deploy can't bring them back;
+ * it only flags the stored ones, so editing one in the admin panel doesn't publish it.
+ */
+const flagSample = (model: { updateMany: (filter: object, update: object) => unknown }, seed: object) =>
+  model.updateMany({ ...seed, sample: { $exists: false } }, { $set: { sample: true } });
+const seedSlugs = (docs: readonly { slug: string }[]) => ({ slug: { $in: docs.map((d) => d.slug) }, source: { $in: [null, ''] } });
+/** Generated reviews have no patient; the team's own (managed) ones are real. */
+const SEED_REVIEWS = { user: { $exists: false }, managed: { $ne: true } };
+
+/** The sync sees every record, sample or not, whatever SHOW_SAMPLE_DATA says. */
+export const syncCatalogue = (log: Log = () => {}) => withSampleData(() => sync(log));
+
+async function sync(log: Log) {
   const started = Date.now();
   const step = (m: string) => log(`[catalogue] ${m} (${Math.round((Date.now() - started) / 100) / 10}s)`);
 
@@ -109,9 +128,12 @@ export async function syncCatalogue(log: Log = () => {}) {
   await ContentModel.deleteMany(stale(content.map((c) => c.slug)));
   await upsertAll(SiteSettingModel, SITE.SITE_SETTINGS);
   await SiteSettingModel.deleteMany(stale(SITE.SITE_SETTINGS.map((s) => s.slug)));
-  const testimonials = SITE.TESTIMONIALS.map((t, order) => ({ badge: { icon: '', label: '' }, doctorSlug: '', ...t, order, published: true }));
-  await upsertAll(TestimonialModel, testimonials);
-  await TestimonialModel.deleteMany(stale(testimonials.map((t) => t.slug)));
+  const testimonials = SITE.TESTIMONIALS.map((t, order) => ({ badge: { icon: '', label: '' }, doctorSlug: '', ...t, order, published: true, sample: true }));
+  if (env.SHOW_SAMPLE_DATA) {
+    await upsertAll(TestimonialModel, testimonials);
+    await TestimonialModel.deleteMany(stale(testimonials.map((t) => t.slug)));
+  }
+  await flagSample(TestimonialModel, { slug: { $in: testimonials.map((t) => t.slug) } });
   const plans = [
     ...SITE.PLUS_PLANS.map((p, order) => ({ slug: p.id, audience: 'plus', name: p.name, tagline: '', price: p.price, period: 'year', members: p.members, highlight: p.highlight, badge: p.highlight ? 'Most popular' : '', perks: p.perks, excluded: [], ctaLabel: `Choose ${p.name}`, order, published: true })),
     ...SITE.PROVIDER_PLANS.map(({ id, ...p }, order) => ({ slug: id, audience: 'provider', members: '', ...p, order, published: true })),
@@ -121,10 +143,13 @@ export async function syncCatalogue(log: Log = () => {}) {
   step('website content');
 
   // ---- Facilities ----
-  const facilities = buildFacilities();
-  await upsertAll(FacilityModel, facilities);
-  await FacilityModel.deleteMany(stale(facilities.map((f) => f.slug)));
-  step(`facilities ${facilities.length}`);
+  const facilities = buildFacilities().map((f) => ({ ...f, sample: true }));
+  if (env.SHOW_SAMPLE_DATA) {
+    await upsertAll(FacilityModel, facilities);
+    await FacilityModel.deleteMany(stale(facilities.map((f) => f.slug)));
+  }
+  await flagSample(FacilityModel, seedSlugs(facilities));
+  step(`facilities ${facilities.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
 
   // ---- Pharmacy ----
   await upsertAll(MedicineCategoryModel, MEDICINE_CATEGORIES);
@@ -216,12 +241,15 @@ export async function syncCatalogue(log: Log = () => {}) {
 
   const roster = buildRoster({ facilities, bangaloreExisting: bangalore.map((d) => ({ slug: d.slug, specialty: d.specialty, facilitySlug: d.facilitySlug })) })
     .map((d) => ({ ...d, photoUrl: nextPortrait(d.gender) }));
-  const everyone = [...bangalore, ...roster].map((d) => ({ ...d, verified: true, slotsThrough: null }));
-  await upsertAll(DoctorModel, everyone as never);
-  await DoctorModel.deleteMany(stale(everyone.map((d) => d.slug)));
-  // Admin-added doctors keep their slots too.
-  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', { managed: true })) as string[])];
-  step(`doctors ${everyone.length}`);
+  const everyone = [...bangalore, ...roster].map((d) => ({ ...d, verified: true, slotsThrough: null, sample: true }));
+  if (env.SHOW_SAMPLE_DATA) {
+    await upsertAll(DoctorModel, everyone as never);
+    await DoctorModel.deleteMany(stale(everyone.map((d) => d.slug)));
+  }
+  await flagSample(DoctorModel, seedSlugs(everyone));
+  // Admin-added and imported doctors keep their slots too.
+  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', PROTECTED)) as string[])];
+  step(`doctors ${everyone.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
 
   // ---- Slots: schedules may have changed, so clear unbooked future slots; they regenerate on demand ----
   await SlotModel.deleteMany({ status: 'open' });
@@ -229,11 +257,14 @@ export async function syncCatalogue(log: Log = () => {}) {
   step('slots reset');
 
   // ---- Reviews: regenerate seeded ones, keep patient-written ones, then derive every count from them ----
-  await ReviewModel.deleteMany({ user: { $exists: false }, managed: { $ne: true } });
-  const seeded = generateReviews(everyone.map((d) => ({ slug: d.slug, specialty: d.specialty })));
-  for (let i = 0; i < seeded.length; i += 2000) await ReviewModel.insertMany(seeded.slice(i, i + 2000), { ordered: false });
-  await refreshDoctorRatings();
-  step(`reviews ${seeded.length}`);
+  if (env.SHOW_SAMPLE_DATA) {
+    await ReviewModel.deleteMany(SEED_REVIEWS);
+    const seeded = generateReviews(everyone.map((d) => ({ slug: d.slug, specialty: d.specialty }))).map((r) => ({ ...r, sample: true }));
+    for (let i = 0; i < seeded.length; i += 2000) await ReviewModel.insertMany(seeded.slice(i, i + 2000), { ordered: false });
+    await refreshDoctorRatings();
+  }
+  await flagSample(ReviewModel, SEED_REVIEWS);
+  step(`reviews${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
 
   // ---- Articles: curated + one per condition, authored by a matching Bangalore doctor ----
   const authorFor = new Map<string, { name: string; slug: string; title: string }>();

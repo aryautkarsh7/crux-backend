@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType } from 'mongoose';
+import { addedOrImported, hideSampleData } from '../lib/sample-data.js';
 
 const facilitySchema = new Schema(
   {
@@ -40,12 +41,19 @@ const facilitySchema = new Schema(
     gallery: { type: [String], default: [] },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** Where an imported record came from ("doctar"); empty for seed and admin-created facilities. */
+    source: { type: String, default: '', index: true },
+    /** The source record's id, so re-running an import updates instead of duplicating. */
+    doctarId: { type: String, unique: true, sparse: true },
+    /** Generated seed facility: hidden from the website unless SHOW_SAMPLE_DATA is on (lib/sample-data.ts). */
+    sample: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
 
 facilitySchema.index({ city: 1, type: 1, rating: -1 });
 facilitySchema.index({ name: 'text', area: 'text', departments: 'text' });
+hideSampleData(facilitySchema, addedOrImported);
 
 export type Facility = InferSchemaType<typeof facilitySchema>;
 export const FacilityModel = model('Facility', facilitySchema);

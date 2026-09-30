@@ -1,4 +1,5 @@
 import { Schema, model } from 'mongoose';
+import { hideSampleData } from '../lib/sample-data.js';
 
 /**
  * Editable website data: single values (settings), page sections (content), testimonials and plans.
@@ -59,9 +60,12 @@ const testimonialSchema = new Schema(
     order: { type: Number, default: 0 },
     published: { type: Boolean, default: true },
     managed: { type: Boolean, default: false, index: true },
+    /** A seeded example story: hidden unless SHOW_SAMPLE_DATA is on. Stories added in the admin show. */
+    sample: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
+hideSampleData(testimonialSchema, () => ({ managed: true }));
 
 const planSchema = new Schema(
   {

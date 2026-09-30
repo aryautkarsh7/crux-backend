@@ -40,6 +40,17 @@ const leadBody = z.object({
   source: z.string().trim().max(60).default(''),
 }).refine((b) => b.phone || b.email, { message: 'Share a phone number or email so we can reach you', path: ['phone'] });
 
+/** Byline for articles whose author isn't a doctor listed on the website (e.g. sample data is hidden). */
+const EDITORIAL_TEAM = { slug: '', name: 'Curxx Editorial Team', title: '' };
+type Bylined = { author?: { slug?: string | null } | null };
+
+/** Articles keep their text; an author who isn't listed becomes the editorial team, with no profile link. */
+async function listedAuthors<T extends Bylined>(articles: T[]): Promise<T[]> {
+  const slugs = [...new Set(articles.map((a) => a.author?.slug).filter((s): s is string => Boolean(s)))];
+  const listed = new Set(slugs.length ? ((await DoctorModel.distinct('slug', { slug: { $in: slugs } })) as string[]) : []);
+  return articles.map((a) => (a.author?.slug && !listed.has(a.author.slug) ? { ...a, author: EDITORIAL_TEAM } : a));
+}
+
 export async function contentRoutes(app: FastifyInstance) {
   // ---- Articles ----
   app.get('/articles', async (request, reply) => {
@@ -58,7 +69,7 @@ export async function contentRoutes(app: FastifyInstance) {
       ArticleModel.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$category', count: { $sum: 1 } } }]),
     ]);
     reply.header('cache-control', CATALOGUE_CACHE);
-    return { ...paged(items.map((a) => toDto(a)), total, page, limit), categories: categories.map((c) => ({ value: c._id, count: c.count })) };
+    return { ...paged((await listedAuthors(items)).map((a) => toDto(a)), total, page, limit), categories: categories.map((c) => ({ value: c._id, count: c.count })) };
   });
 
   app.get('/articles/:slug', async (request, reply) => {
@@ -74,7 +85,11 @@ export async function contentRoutes(app: FastifyInstance) {
       ? await ArticleModel.find({ slug: { $nin: [slug, ...related.map((r) => r.slug)] } }, { sections: 0 }).sort({ publishedAt: -1 }).limit(3 - related.length).lean()
       : [];
     reply.header('cache-control', CATALOGUE_CACHE);
-    return { article: toDto(article), author: author ? toDto(author) : null, related: [...related, ...more].map((a) => toDto(a)) };
+    return {
+      article: toDto(author ? article : (await listedAuthors([article]))[0]!),
+      author: author ? toDto(author) : null,
+      related: [...related, ...more].map((a) => toDto(a)),
+    };
   });
 
   // ---- Reviews ----
@@ -83,6 +98,8 @@ export async function contentRoutes(app: FastifyInstance) {
     const { sort, mode, page, limit } = reviewQuery.parse(request.query);
     const filter: Record<string, unknown> = { doctorSlug: slug };
     if (mode) filter.mode = mode;
+    // Reviews only show for a doctor who is listed (not for hidden sample doctors).
+    if (!(await DoctorModel.exists({ slug }))) throw notFound('Doctor not found');
 
     const [items, total, summary] = await Promise.all([
       ReviewModel.find(filter).sort(REVIEW_SORTS[sort]).skip((page - 1) * limit).limit(limit).lean(),

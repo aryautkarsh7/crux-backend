@@ -4,9 +4,8 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import mongoose from 'mongoose';
 import { buildApp } from '../src/app.js';
-import { connectDatabase } from '../src/db/connect.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
@@ -37,7 +36,8 @@ before(async () => {
 
 after(async () => {
   await app.close();
-  await mongoose.disconnect();
+  // Also stops the mongod this file started, so the test process can exit.
+  await disconnectDatabase();
 });
 
 describe('testing-team requests', () => {
