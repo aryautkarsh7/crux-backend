@@ -82,6 +82,8 @@ copied into Curxx (`src/modules/doctar`):
 - `store.ts` (`Doctors`, `Facilities`) is what public routes read: Curxx's own records (MongoDB) plus the
   directory, with the same MongoDB filters and sorts (`lib/query-match.ts`).
 - `detail.ts` reads a profile's page-only fields from Doctar, cached (`DOCTAR_DETAIL_TTL_SECONDS`).
+- `cache.ts` writes and reads the saved copy (`directory_cache`) as a stream of JSON lines (one record per
+  line, in ≤8 MB parts), never as one big string: one `JSON.stringify` of the index ran the server out of heap.
 - Curxx-only settings (hide, rank, feature, booking, contact overrides) live in `doctar_overlays`, edited in
   the admin panel (Doctar directory, Rankings).
 - While no copy is loaded, listings say "temporarily unavailable" and missing profiles answer 503, not 404.

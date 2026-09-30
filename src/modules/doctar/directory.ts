@@ -4,12 +4,11 @@
  * search and the sitemap read it, so no page waits on Doctar.
  * - Built by paging through Doctar (small projections, retries); swapped in only when complete.
  * - The last good index is saved gzipped in the Curxx DB (directory_cache) and loaded at start-up, so a
- *   restart serves listings at once, even while Doctar is unreachable.
+ *   restart serves listings at once, even while Doctar is unreachable. Both stream (cache.ts).
  * - Curxx-only settings (doctar_overlays: ranking, hiding, featuring, booking, contact overrides) are
  *   applied on top, and re-applied as soon as the admin changes one.
  * - Peak memory during a build is logged, to size the final server.
  */
-import { gunzipSync, gzipSync } from 'node:zlib';
 import { env } from '../../config/env.js';
 import { cities as allCities } from '../../lib/catalogue-store.js';
 import { matches } from '../../lib/query-match.js';
@@ -32,17 +31,15 @@ import {
   type FacilityDoc,
   type MappingContext,
 } from './mapping.js';
-import { DirectoryCacheModel, DoctarOverlayModel } from './models.js';
+import { loadCache, saveCache } from './cache.js';
+import { DoctarOverlayModel } from './models.js';
 import { mongoDoctarSource, type DoctarSource } from './source.js';
 
 type Doc = Record<string, unknown>;
-const CACHE_NAME = 'doctar-directory';
-/** gzipped bytes per cache document (a MongoDB document is capped at 16 MB). */
-const CACHE_PART_BYTES = 8 * 1024 * 1024;
 
 export type DirectoryStatus = 'disabled' | 'loading' | 'ready' | 'unavailable';
 
-type Index = {
+export type Index = {
   doctors: DoctorDoc[];
   facilities: FacilityDoc[];
   builtAt: Date;
@@ -289,9 +286,13 @@ export async function buildIndex(src: DoctarSource): Promise<Index> {
     peakHeapMb: Math.round(peakHeap / 1e6),
     capped,
   };
+  // Plain string ids, as in the saved copy. Set in place: the records are this build's own, and copying
+  // every one of them would briefly hold the index twice.
+  for (const d of doctors) d._id = String(d._id);
+  for (const f of facilities) f._id = String(f._id);
   return {
-    doctors: doctors.map((d) => ({ ...d, _id: String(d._id) })),
-    facilities: facilities.map((f) => ({ ...f, _id: String(f._id) })),
+    doctors,
+    facilities,
     builtAt: new Date(),
     from: 'doctar',
     report,
@@ -403,68 +404,6 @@ export function directoryMatches<T extends DoctorDoc | FacilityDoc>(
   return candidates.filter((d) => matches(d, filter)) as T[];
 }
 
-// ---------------------------------------------------------------- Cold-start cache
-
-async function saveCache(ix: Index) {
-  const gz = gzipSync(
-    Buffer.from(
-      JSON.stringify({
-        doctors: ix.doctors,
-        facilities: ix.facilities,
-        builtAt: ix.builtAt,
-        report: ix.report,
-      }),
-    ),
-  );
-  const generation = ix.builtAt.getTime();
-  const parts = Math.max(1, Math.ceil(gz.length / CACHE_PART_BYTES));
-  for (let part = 0; part < parts; part += 1) {
-    await DirectoryCacheModel.updateOne(
-      { name: CACHE_NAME, generation, part },
-      {
-        $set: {
-          parts,
-          data: gz.subarray(part * CACHE_PART_BYTES, (part + 1) * CACHE_PART_BYTES),
-          builtAt: ix.builtAt,
-        },
-      },
-      { upsert: true },
-    );
-  }
-  await DirectoryCacheModel.deleteMany({ name: CACHE_NAME, generation: { $ne: generation } });
-  log(`cache saved: ${(gz.length / 1e6).toFixed(1)} MB gzipped in ${parts} part(s)`);
-}
-
-async function loadCache(): Promise<Index | null> {
-  const newest = await DirectoryCacheModel.findOne(
-    { name: CACHE_NAME },
-    { generation: 1, parts: 1 },
-  )
-    .sort({ generation: -1 })
-    .lean();
-  if (!newest) return null;
-  const rows = await DirectoryCacheModel.find({ name: CACHE_NAME, generation: newest.generation })
-    .sort({ part: 1 })
-    .lean();
-  if (rows.length !== newest.parts) return null;
-  // lean() gives BSON Binary values, not Buffers.
-  const bytes = (v: unknown) =>
-    Buffer.isBuffer(v) ? v : Buffer.from((v as { buffer: Uint8Array }).buffer);
-  const data = JSON.parse(gunzipSync(Buffer.concat(rows.map((r) => bytes(r.data)))).toString()) as {
-    doctors: DoctorDoc[];
-    facilities: FacilityDoc[];
-    builtAt: string;
-    report: BuildReport | null;
-  };
-  return {
-    doctors: data.doctors,
-    facilities: data.facilities,
-    builtAt: new Date(data.builtAt),
-    from: 'cache',
-    report: data.report,
-  };
-}
-
 // ---------------------------------------------------------------- Lifecycle
 
 /** Rebuilds from Doctar; on failure the previous index keeps serving. Concurrent calls share one build. */
@@ -484,7 +423,13 @@ export function refreshDirectory(): Promise<void> {
       log(
         `index built in ${r.seconds}s: ${r.doctors} doctors (${r.scanned} scanned${r.capped ? ', capped by DOCTAR_MAX_DOCTORS' : ''}), ${r.facilities} hospitals · peak memory ${r.peakRssMb} MB RSS / ${r.peakHeapMb} MB heap`,
       );
-      await saveCache(next).catch((error) => log(`cache not saved: ${(error as Error).message}`));
+      await saveCache(next).then(
+        (saved) =>
+          log(
+            `cache saved: ${(saved.bytes / 1e6).toFixed(1)} MB gzipped in ${saved.parts} part(s)`,
+          ),
+        (error) => log(`cache not saved: ${(error as Error).message}`),
+      );
     } catch (error) {
       lastError = String((error as Error)?.message ?? error)
         .replace(/mongodb(\+srv)?:\/\/\S+/g, '<uri>')

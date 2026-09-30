@@ -9,10 +9,10 @@
  * (src/modules/doctar).
  */
 import 'dotenv/config';
-import { gzipSync } from 'node:zlib';
 import mongoose from 'mongoose';
 import { env } from '../src/config/env.js';
 import { reloadCatalogue } from '../src/lib/catalogue-store.js';
+import { writeIndexCache } from '../src/modules/doctar/cache.js';
 import { buildIndex } from '../src/modules/doctar/directory.js';
 import { mongoDoctarSource } from '../src/modules/doctar/source.js';
 
@@ -53,9 +53,10 @@ async function main() {
     }
     const hospitalsPerCity: Record<string, number> = {};
     for (const f of ix.facilities) hospitalsPerCity[f.city] = (hospitalsPerCity[f.city] ?? 0) + 1;
-    const gz = gzipSync(
-      Buffer.from(JSON.stringify({ doctors: ix.doctors, facilities: ix.facilities })),
-    );
+    // The cold-start copy exactly as the server writes it (streamed); the parts are counted, not stored.
+    const cache = await writeIndexCache(ix, async () => {});
+    // The process's peak so far: the build plus writing the copy.
+    const peakMb = Math.round((process.resourceUsage().maxRSS * 1024) / 1e6);
     console.log(
       `  Doctors listed: ${r.doctors} of ${r.scanned} scanned${r.capped ? ' (capped by DOCTAR_MAX_DOCTORS)' : ''} · hospitals: ${r.facilities}`,
     );
@@ -63,7 +64,7 @@ async function main() {
       `  Linked to a hospital page: ${ix.doctors.filter((d) => d.facilitySlug).length} · with weekly hours: ${ix.doctors.filter((d) => d.consultHours).length} · with gender: ${ix.doctors.filter((d) => d.gender).length} · Doctar-verified: ${ix.doctors.filter((d) => d.doctarVerified).length}`,
     );
     console.log(
-      `  Build: ${r.seconds}s · peak memory ${r.peakRssMb} MB RSS / ${r.peakHeapMb} MB heap · cold-start cache ${(gz.length / 1e6).toFixed(1)} MB gzipped`,
+      `  Build: ${r.seconds}s · peak memory ${r.peakRssMb} MB RSS / ${r.peakHeapMb} MB heap · cold-start cache ${(cache.bytes / 1e6).toFixed(1)} MB gzipped in ${cache.parts} part(s) · peak with the cache written ${peakMb} MB RSS`,
     );
     console.log(line('Doctors per city', perCity, 30));
     console.log(line('Hospitals per city', hospitalsPerCity, 30));
