@@ -9,6 +9,8 @@ const schema = z.object({
   MONGODB_URI: z.string().optional(),
   /** Database name for the local development/test MongoDB. */
   MONGODB_DB: z.string().regex(/^[a-z0-9_]+$/i).default('curxx'),
+  MONGODB_PORT: z.coerce.number().int().min(1).max(65_535).default(27017),
+  MONGODB_DATA_PATH: z.string().min(1).default('.data/mongo'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   MSGCENTRAL_CUSTOMER_ID: z.string().optional(),

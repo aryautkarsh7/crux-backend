@@ -15,6 +15,20 @@ No database install needed in development: if `MONGODB_URI` is empty, a local Mo
 downloaded once and started automatically, storing data in `.data/mongo`. For production set
 `MONGODB_URI` to a MongoDB Atlas connection string.
 
+## Project commands
+
+```bash
+npm run format
+npm run format:check
+npm run lint
+npm run test
+```
+
+`npm run test` always uses the local `mongodb-memory-server` setup and clears `MONGODB_URI`.
+It defaults to port `27018`; set `MONGODB_PORT=27019 npm run test` to use another port. Its
+database name and local data directory default from that port and can also be overridden with
+`MONGODB_DB` and `MONGODB_DATA_PATH`.
+
 ## Endpoints
 
 | Method | Path | Auth | Purpose |
