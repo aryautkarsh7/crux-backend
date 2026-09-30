@@ -3,8 +3,10 @@ import { env } from '../../config/env.js';
 import { HttpError, badRequest, conflict, unauthorized } from '../../lib/errors.js';
 import { OtpModel } from '../../models/otp.model.js';
 import { UserModel } from '../../models/user.model.js';
+import { isMessageCentralConfigured, sendOtpMessageCentral, validateOtpMessageCentral } from '../../lib/notify/message-central.js';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const INDIAN_MOBILE = /^[6-9]\d{9}$/;
 
@@ -17,46 +19,91 @@ export function normalisePhone(input: string) {
 }
 
 /**
- * Issues a one-time code. Until an SMS provider is connected the code is returned
- * in the response outside production so the app can complete the flow.
+ * Issues a 4-digit one-time code via Message Central VerifyNow API.
+ * Outside production, if Message Central is not configured, a dev fallback code is returned.
+ * In production, if Message Central is not configured, it fails closed.
  */
 export async function requestOtp(rawPhone: string, intent: 'login' | 'register' | 'any' = 'any') {
   const phone = normalisePhone(rawPhone);
-  // Login and Register are separate screens: tell people early if they picked the wrong one.
+
   const existing = await UserModel.findOne({ phone }, { name: 1 }).lean();
   const registered = Boolean(existing?.name);
   if (intent === 'login' && !existing) throw new HttpError(404, 'No Curxx account uses this number yet. Create one — it takes 30 seconds.', 'not_registered');
   if (intent === 'register' && registered) throw conflict('This number already has a Curxx account. Log in instead.', 'already_registered');
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
 
-  await OtpModel.findOneAndUpdate(
-    { phone },
-    { phone, codeHash: hash(code), attempts: 0, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
-    { upsert: true },
-  );
+  const existingChallenge = await OtpModel.findOne({ phone }).lean();
+  if (existingChallenge?.lastSentAt) {
+    const elapsed = Date.now() - new Date(existingChallenge.lastSentAt).getTime();
+    if (elapsed < RESEND_COOLDOWN_MS) {
+      const waitSeconds = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000);
+      throw badRequest(`Please wait ${waitSeconds} seconds before requesting a new code`, 'resend_cooldown');
+    }
+  }
 
-  return { phone, registered, expiresInSeconds: OTP_TTL_MS / 1000, devCode: env.isProduction ? undefined : code };
+  const configured = isMessageCentralConfigured();
+
+  if (configured) {
+    const { verificationId } = await sendOtpMessageCentral(phone);
+
+    await OtpModel.findOneAndUpdate(
+      { phone },
+      { phone, verificationId, lastSentAt: new Date(), attempts: 0, expiresAt: new Date(Date.now() + OTP_TTL_MS), $unset: { codeHash: 1 } },
+      { upsert: true },
+    );
+
+    return { phone, registered, expiresInSeconds: OTP_TTL_MS / 1000 };
+  } else if (!env.isProduction) {
+    const code = String(randomInt(0, 10_000)).padStart(4, '0');
+
+    await OtpModel.findOneAndUpdate(
+      { phone },
+      { phone, codeHash: hash(code), lastSentAt: new Date(), attempts: 0, expiresAt: new Date(Date.now() + OTP_TTL_MS), $unset: { verificationId: 1 } },
+      { upsert: true },
+    );
+
+    return { phone, registered, expiresInSeconds: OTP_TTL_MS / 1000, devCode: code };
+  } else {
+    throw new HttpError(500, 'OTP service is not configured on the server', 'otp_service_unavailable');
+  }
 }
 
-/** Outside production any 6-digit code is accepted, so the flow works without SMS. */
 export type Registration = { name: string; email?: string; gender?: 'female' | 'male' | 'other' | ''; dob?: Date };
 
 export async function verifyOtp(rawPhone: string, code: string, registration?: Registration) {
   const phone = normalisePhone(rawPhone);
-  if (!/^\d{6}$/.test(code)) throw badRequest('Enter the 6-digit code', 'invalid_code');
+  if (!/^\d{4}$/.test(code)) throw badRequest('Enter the 4-digit code', 'invalid_code');
 
   const challenge = await OtpModel.findOne({ phone });
-  const matches = challenge && challenge.expiresAt > new Date() && challenge.codeHash === hash(code);
-
-  if (!matches && env.isProduction) {
-    if (challenge && challenge.attempts + 1 >= MAX_ATTEMPTS) await OtpModel.deleteOne({ phone });
-    else if (challenge) await OtpModel.updateOne({ phone }, { $inc: { attempts: 1 } });
+  if (!challenge || challenge.expiresAt <= new Date()) {
     throw unauthorized('That code is incorrect or has expired');
+  }
+
+  if (challenge.attempts >= MAX_ATTEMPTS) {
+    await OtpModel.deleteOne({ phone });
+    throw unauthorized('Too many failed attempts. Please request a new code.', 'too_many_attempts');
+  }
+
+  let isValid = false;
+
+  if (challenge.verificationId) {
+    isValid = await validateOtpMessageCentral(phone, challenge.verificationId, code);
+  } else if (challenge.codeHash) {
+    isValid = challenge.codeHash === hash(code);
+  }
+
+  if (!isValid) {
+    if (challenge.attempts + 1 >= MAX_ATTEMPTS) {
+      await OtpModel.deleteOne({ phone });
+      throw unauthorized('Too many failed attempts. Please request a new code.', 'too_many_attempts');
+    } else {
+      await OtpModel.updateOne({ phone }, { $inc: { attempts: 1 } });
+      throw unauthorized('That code is incorrect or has expired');
+    }
   }
 
   await OtpModel.deleteOne({ phone });
   const existing = await UserModel.findOne({ phone }, { name: 1 }).lean();
-  // Registration details are only applied to a new (or still nameless) account, never over an existing profile.
+
   const profile = registration && !existing?.name
     ? Object.fromEntries(Object.entries(registration).filter(([, v]) => v !== undefined && v !== ''))
     : {};

@@ -11,7 +11,10 @@ const schema = z.object({
   MONGODB_DB: z.string().regex(/^[a-z0-9_]+$/i).default('curxx'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
-
+  MSGCENTRAL_CUSTOMER_ID: z.string().optional(),
+  MSGCENTRAL_BASE64_KEY: z.string().optional(),
+  MSGCENTRAL_EMAIL: z.string().optional(),
+  MSGCENTRAL_COUNTRY: z.string().default('IN'),
 });
 
 const parsed = schema.safeParse(process.env);
