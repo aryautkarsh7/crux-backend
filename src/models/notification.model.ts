@@ -14,7 +14,11 @@ const notificationSchema = new Schema(
     to: { type: String, default: '' },
     /** The doctor / facility contact it was meant for. */
     intendedFor: { type: String, default: '' },
-    status: { type: String, enum: ['sending', 'sent', 'logged', 'skipped', 'failed'], default: 'sending' },
+    status: {
+      type: String,
+      enum: ['sending', 'sent', 'logged', 'skipped', 'failed'],
+      default: 'sending',
+    },
     provider: { type: String, default: '' },
     providerId: { type: String, default: '' },
     error: { type: String, default: '' },

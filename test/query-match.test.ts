@@ -52,8 +52,25 @@ describe('query-match', () => {
 
   test('sort order follows MongoDB (missing first ascending, numbers before strings)', () => {
     const rows = [{ k: 'b' }, { k: 2 }, {}, { k: 1 }, { k: 'a' }, { k: null }];
-    assert.deepEqual(sortBy([...rows], { k: 1 }).map((r) => (r as { k?: unknown }).k ?? null), [null, null, 1, 2, 'a', 'b']);
-    assert.deepEqual(sortBy([{ r: 1, s: 'b' }, { r: 2, s: 'a' }, { r: 2, s: 'b' }], { r: -1, s: 1 }), [{ r: 2, s: 'a' }, { r: 2, s: 'b' }, { r: 1, s: 'b' }]);
+    assert.deepEqual(
+      sortBy([...rows], { k: 1 }).map((r) => (r as { k?: unknown }).k ?? null),
+      [null, null, 1, 2, 'a', 'b'],
+    );
+    assert.deepEqual(
+      sortBy(
+        [
+          { r: 1, s: 'b' },
+          { r: 2, s: 'a' },
+          { r: 2, s: 'b' },
+        ],
+        { r: -1, s: 1 },
+      ),
+      [
+        { r: 2, s: 'a' },
+        { r: 2, s: 'b' },
+        { r: 1, s: 'b' },
+      ],
+    );
   });
 
   test('projection', () => {

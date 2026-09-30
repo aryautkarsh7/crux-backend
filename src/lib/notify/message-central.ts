@@ -17,7 +17,9 @@ export async function getAuthToken(): Promise<string> {
   const country = env.MSGCENTRAL_COUNTRY?.trim() || 'IN';
 
   if (!customerId || !key) {
-    throw new Error('Message Central credentials (MSGCENTRAL_CUSTOMER_ID, MSGCENTRAL_BASE64_KEY) are not configured');
+    throw new Error(
+      'Message Central credentials (MSGCENTRAL_CUSTOMER_ID, MSGCENTRAL_BASE64_KEY) are not configured',
+    );
   }
 
   const now = Date.now();
@@ -40,7 +42,9 @@ export async function getAuthToken(): Promise<string> {
 
   const data = (await res.json().catch(() => null)) as Record<string, any> | null;
   if (!res.ok || !data) {
-    throw new Error(`Message Central token fetch failed (${res.status}): ${data?.message ?? 'Unknown error'}`);
+    throw new Error(
+      `Message Central token fetch failed (${res.status}): ${data?.message ?? 'Unknown error'}`,
+    );
   }
 
   const token = data.token ?? data.authToken ?? data.data?.token ?? data.data?.authToken;
@@ -82,13 +86,19 @@ export async function sendOtpMessageCentral(phone: string): Promise<{ verificati
   const verificationId = body?.data?.verificationId ?? body?.verificationId;
 
   if (!res.ok || (responseCode !== 200 && responseCode !== '200') || !verificationId) {
-    throw new Error(`Message Central send OTP failed: ${body?.message ?? body?.data?.errorMessage ?? 'Unknown error'}`);
+    throw new Error(
+      `Message Central send OTP failed: ${body?.message ?? body?.data?.errorMessage ?? 'Unknown error'}`,
+    );
   }
 
   return { verificationId: String(verificationId) };
 }
 
-export async function validateOtpMessageCentral(phone: string, verificationId: string, code: string): Promise<boolean> {
+export async function validateOtpMessageCentral(
+  phone: string,
+  verificationId: string,
+  code: string,
+): Promise<boolean> {
   const token = await getAuthToken();
   const customerId = env.MSGCENTRAL_CUSTOMER_ID?.trim() ?? '';
   const countryCode = '91';
@@ -117,7 +127,10 @@ export async function validateOtpMessageCentral(phone: string, verificationId: s
     return false;
   }
 
-  if ((responseCode === 200 || responseCode === '200') && (status === 'VERIFICATION_COMPLETED' || status === 'SUCCESS' || !status)) {
+  if (
+    (responseCode === 200 || responseCode === '200') &&
+    (status === 'VERIFICATION_COMPLETED' || status === 'SUCCESS' || !status)
+  ) {
     return true;
   }
 

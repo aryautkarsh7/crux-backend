@@ -11,11 +11,20 @@ import { Doctors, Facilities } from '../doctar/store.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { LabModel } from '../../models/lab.model.js';
 import { ReviewModel } from '../../models/review.model.js';
-import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../../models/site.model.js';
+import {
+  ContentModel,
+  PlanModel,
+  SiteSettingModel,
+  TestimonialModel,
+} from '../../models/site.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 
 const STATS_TTL_MS = 5 * 60 * 1000;
-let statsCache: { at: number; version: number; value: Awaited<ReturnType<typeof computeStats>> } | null = null;
+let statsCache: {
+  at: number;
+  version: number;
+  value: Awaited<ReturnType<typeof computeStats>>;
+} | null = null;
 
 /** Every number the website shows about itself, counted from the database. */
 async function computeStats() {
@@ -23,9 +32,29 @@ async function computeStats() {
   // Bookable online: Curxx's own doctors, plus imported ones with weekly hours once IMPORTED_BOOKABLE is on (see lib/booking-mode.ts).
   const bookable = {
     bookable: { $ne: false },
-    $or: [{ source: { $in: [null, ''] } }, ...(env.IMPORTED_BOOKABLE ? [{ source: { $nin: [null, ''] }, 'schedule.days.0': { $exists: true } }] : [])],
+    $or: [
+      { source: { $in: [null, ''] } },
+      ...(env.IMPORTED_BOOKABLE
+        ? [{ source: { $nin: [null, ''] }, 'schedule.days.0': { $exists: true } }]
+        : []),
+    ],
   };
-  const [doctors, verifiedDoctors, instantDoctors, videoDoctors, freeVideoDoctors, bookableDoctors, facilities, hospitals, accreditedFacilities, emergencyFacilities, labs, labTests, specialties, reviews] = await Promise.all([
+  const [
+    doctors,
+    verifiedDoctors,
+    instantDoctors,
+    videoDoctors,
+    freeVideoDoctors,
+    bookableDoctors,
+    facilities,
+    hospitals,
+    accreditedFacilities,
+    emergencyFacilities,
+    labs,
+    labTests,
+    specialties,
+    reviews,
+  ] = await Promise.all([
     Doctors.count(),
     Doctors.count({ verified: true }),
     Doctors.count({ instant: true }),
@@ -39,7 +68,9 @@ async function computeStats() {
     LabModel.countDocuments(),
     LabTestModel.countDocuments(),
     SpecialtyModel.countDocuments(),
-    ReviewModel.aggregate<{ total: number; average: number }>([{ $group: { _id: null, total: { $sum: 1 }, average: { $avg: '$rating' } } }]),
+    ReviewModel.aggregate<{ total: number; average: number }>([
+      { $group: { _id: null, total: { $sum: 1 }, average: { $avg: '$rating' } } },
+    ]),
   ]);
   return {
     doctors,
@@ -66,7 +97,14 @@ async function computeStats() {
 }
 
 const published = { published: { $ne: false } };
-const strip = <T extends Record<string, unknown>>({ _id: _i, managed: _m, createdAt: _c, updatedAt: _u, published: _p, ...rest }: T) => rest;
+const strip = <T extends Record<string, unknown>>({
+  _id: _i,
+  managed: _m,
+  createdAt: _c,
+  updatedAt: _u,
+  published: _p,
+  ...rest
+}: T) => rest;
 
 export async function siteRoutes(app: FastifyInstance) {
   /**
@@ -74,35 +112,62 @@ export async function siteRoutes(app: FastifyInstance) {
    * has confirmed it by saving it in the admin panel: the seeded ones ("1.2M+ consultations") are examples.
    */
   app.get('/site/settings', async (_request, reply) => {
-    const settings = await SiteSettingModel.find(sampleHidden() ? { $or: [{ kind: { $ne: 'claim' } }, { managed: true }] } : {}, { slug: 1, value: 1 }).lean();
+    const settings = await SiteSettingModel.find(
+      sampleHidden() ? { $or: [{ kind: { $ne: 'claim' } }, { managed: true }] } : {},
+      { slug: 1, value: 1 },
+    ).lean();
     reply.header('cache-control', CATALOGUE_CACHE);
     return { settings: Object.fromEntries(settings.map((s) => [s.slug, s.value])) };
   });
 
   app.get('/site/stats', async (_request, reply) => {
-    if (!statsCache || Date.now() - statsCache.at > STATS_TTL_MS || statsCache.version !== directoryVersion()) statsCache = { at: Date.now(), version: directoryVersion(), value: await computeStats() };
+    if (
+      !statsCache ||
+      Date.now() - statsCache.at > STATS_TTL_MS ||
+      statsCache.version !== directoryVersion()
+    )
+      statsCache = { at: Date.now(), version: directoryVersion(), value: await computeStats() };
     reply.header('cache-control', CATALOGUE_CACHE);
     return { stats: statsCache.value };
   });
 
   /** Page sections by page key; several pages at once with a comma, e.g. /content/home,shared. */
   app.get('/content/:pages', async (request, reply) => {
-    const { pages } = z.object({ pages: z.string().regex(/^[a-z0-9-]+(,[a-z0-9-]+){0,5}$/, 'Unknown page') }).parse(request.params);
-    const docs = await ContentModel.find({ page: { $in: pages.split(',') }, ...published }).sort({ order: 1 }).lean();
+    const { pages } = z
+      .object({ pages: z.string().regex(/^[a-z0-9-]+(,[a-z0-9-]+){0,5}$/, 'Unknown page') })
+      .parse(request.params);
+    const docs = await ContentModel.find({ page: { $in: pages.split(',') }, ...published })
+      .sort({ order: 1 })
+      .lean();
     reply.header('cache-control', CATALOGUE_CACHE);
-    return { sections: Object.fromEntries(docs.map((d) => [`${d.page}/${d.section}`, { title: d.title, intro: d.intro, items: d.items }])) };
+    return {
+      sections: Object.fromEntries(
+        docs.map((d) => [
+          `${d.page}/${d.section}`,
+          { title: d.title, intro: d.intro, items: d.items },
+        ]),
+      ),
+    };
   });
 
   app.get('/testimonials', async (request, reply) => {
-    const { audience } = z.object({ audience: z.enum(['patient', 'provider']).default('patient') }).parse(request.query);
-    const items = await TestimonialModel.find({ audience, ...published }).sort({ order: 1, createdAt: 1 }).lean();
+    const { audience } = z
+      .object({ audience: z.enum(['patient', 'provider']).default('patient') })
+      .parse(request.query);
+    const items = await TestimonialModel.find({ audience, ...published })
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
     reply.header('cache-control', CATALOGUE_CACHE);
     return { testimonials: items.map((t) => strip(t)) };
   });
 
   app.get('/plans', async (request, reply) => {
-    const { audience } = z.object({ audience: z.enum(['plus', 'provider']).default('plus') }).parse(request.query);
-    const items = await PlanModel.find({ audience, ...published }).sort({ order: 1, price: 1 }).lean();
+    const { audience } = z
+      .object({ audience: z.enum(['plus', 'provider']).default('plus') })
+      .parse(request.query);
+    const items = await PlanModel.find({ audience, ...published })
+      .sort({ order: 1, price: 1 })
+      .lean();
     reply.header('cache-control', CATALOGUE_CACHE);
     return { plans: items.map((p) => strip(p)) };
   });
@@ -113,18 +178,70 @@ export async function siteRoutes(app: FastifyInstance) {
    * this and checks here for slugs added since (new cities, conditions or specialties).
    */
   app.get('/catalogue/routing', async (_request, reply) => {
-    const specialties = await SpecialtyModel.find({}, { slug: 1, name: 1, plural: 1, icon: 1, category: 1, fromPrice: 1, videoFrom: 1, video: 1, popular: 1, description: 1, homeOrder: 1, order: 1 })
+    const specialties = await SpecialtyModel.find(
+      {},
+      {
+        slug: 1,
+        name: 1,
+        plural: 1,
+        icon: 1,
+        category: 1,
+        fromPrice: 1,
+        videoFrom: 1,
+        video: 1,
+        popular: 1,
+        description: 1,
+        homeOrder: 1,
+        order: 1,
+      },
+    )
       .sort({ order: 1, name: 1 })
       .lean();
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
-      cities: cities().map((c) => ({ slug: c.slug, name: c.name, state: c.state, tier: c.tier, lat: c.lat, lng: c.lng, aliases: c.aliases, popularOrder: c.popularOrder ?? 0, localities: c.localities.map((l) => ({ slug: l.slug, name: l.name, pincode: l.pincode })) })),
-      specialtyCategories: [...new Set([...SPECIALTY_CATEGORIES, ...specialties.map((s) => s.category)])],
-      specialties: specialties.map((s) => ({ slug: s.slug, name: s.name, plural: s.plural, icon: s.icon, category: s.category, fromPrice: s.fromPrice, videoFrom: s.videoFrom, video: s.video !== false, popular: Boolean(s.popular), description: s.description, homeOrder: s.homeOrder ?? 0 })),
+      cities: cities().map((c) => ({
+        slug: c.slug,
+        name: c.name,
+        state: c.state,
+        tier: c.tier,
+        lat: c.lat,
+        lng: c.lng,
+        aliases: c.aliases,
+        popularOrder: c.popularOrder ?? 0,
+        localities: c.localities.map((l) => ({ slug: l.slug, name: l.name, pincode: l.pincode })),
+      })),
+      specialtyCategories: [
+        ...new Set([...SPECIALTY_CATEGORIES, ...specialties.map((s) => s.category)]),
+      ],
+      specialties: specialties.map((s) => ({
+        slug: s.slug,
+        name: s.name,
+        plural: s.plural,
+        icon: s.icon,
+        category: s.category,
+        fromPrice: s.fromPrice,
+        videoFrom: s.videoFrom,
+        video: s.video !== false,
+        popular: Boolean(s.popular),
+        description: s.description,
+        homeOrder: s.homeOrder ?? 0,
+      })),
       specialtyAliases: SPECIALTY_ALIASES,
-      conditions: conditions().map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty, popular: c.popular || null, popularOrder: c.popularOrder ?? 0 })),
+      conditions: conditions().map((c) => ({
+        slug: c.slug,
+        name: c.name,
+        specialty: c.specialty,
+        popular: c.popular || null,
+        popularOrder: c.popularOrder ?? 0,
+      })),
       surgeryCategories: surgeryCategories(),
-      surgeries: surgeries().map((s) => ({ slug: s.slug, name: s.name, category: s.category, icon: s.icon, popular: Boolean(s.popular) })),
+      surgeries: surgeries().map((s) => ({
+        slug: s.slug,
+        name: s.name,
+        category: s.category,
+        icon: s.icon,
+        popular: Boolean(s.popular),
+      })),
       facilityTypes: FACILITY_TYPES,
     };
   });

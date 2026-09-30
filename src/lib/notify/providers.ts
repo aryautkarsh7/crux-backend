@@ -38,8 +38,15 @@ export function resendEmail(apiKey: string, from: string): EmailProvider {
         body: JSON.stringify({ from, to: [to], subject, text }),
         signal: AbortSignal.timeout(10_000),
       });
-      const body = (await response.json().catch(() => null)) as { id?: string; message?: string; name?: string } | null;
-      if (!response.ok) throw new Error(`Resend ${response.status}: ${body?.message ?? body?.name ?? 'request failed'}`);
+      const body = (await response.json().catch(() => null)) as {
+        id?: string;
+        message?: string;
+        name?: string;
+      } | null;
+      if (!response.ok)
+        throw new Error(
+          `Resend ${response.status}: ${body?.message ?? body?.name ?? 'request failed'}`,
+        );
       return { id: body?.id };
     },
   };
@@ -67,7 +74,9 @@ function smsProvider(): SmsProvider {
     case 'log':
       return logSms;
     default:
-      notifyLog(`SMS_PROVIDER "${env.SMS_PROVIDER}" isn't implemented yet; SMS is written to the log only.`);
+      notifyLog(
+        `SMS_PROVIDER "${env.SMS_PROVIDER}" isn't implemented yet; SMS is written to the log only.`,
+      );
       return logSms;
   }
 }
@@ -84,6 +93,6 @@ export function setProviders(next: { email?: EmailProvider | null; sms?: SmsProv
 }
 
 export const providers = () => ({
-  email: 'email' in overrides ? overrides.email ?? null : emailProvider(),
+  email: 'email' in overrides ? (overrides.email ?? null) : emailProvider(),
   sms: overrides.sms ?? smsProvider(),
 });

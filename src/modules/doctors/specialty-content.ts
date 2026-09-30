@@ -1,16 +1,33 @@
 import type { City } from '../../db/data/cities.js';
 import { env } from '../../config/env.js';
-import { cities as allCities, conditions as allConditions, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
+import {
+  cities as allCities,
+  conditions as allConditions,
+  surgeries as allSurgeries,
+} from '../../lib/catalogue-store.js';
 import { SpecialtyModel, type Specialty } from '../../models/specialty.model.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-const STATS_FIELDS = { fee: 1, videoFee: 1, schedule: 1, freeVideo: 1, rating: 1, reviewCount: 1, experienceYears: 1, gender: 1, bookable: 1, source: 1, feeVerified: 1 } as const;
+const STATS_FIELDS = {
+  fee: 1,
+  videoFee: 1,
+  schedule: 1,
+  freeVideo: 1,
+  rating: 1,
+  reviewCount: 1,
+  experienceYears: 1,
+  gender: 1,
+  bookable: 1,
+  source: 1,
+  feeVerified: 1,
+} as const;
 
 /** Fee, video, rating and experience figures for a set of doctors (averages skip missing values, like $avg). */
 function summarise(docs: Record<string, any>[]) {
-  const nums = (pick: (d: Record<string, any>) => unknown) => docs.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  const nums = (pick: (d: Record<string, any>) => unknown) =>
+    docs.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const min = (xs: number[]) => (xs.length ? xs.reduce((a, b) => Math.min(a, b)) : null);
   const max = (xs: number[]) => (xs.length ? xs.reduce((a, b) => Math.max(a, b)) : null);
@@ -37,25 +54,57 @@ function summarise(docs: Record<string, any>[]) {
   };
 }
 
-const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+const list = (items: string[]) =>
+  items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 /**
  * Everything a specialty listing needs beyond the doctor cards: an intro, stats, conditions,
  * FAQs and internal links. Built from live counts so the copy never contradicts the page.
  */
 export async function specialtyContent(specialty: Specialty, city: City, areaSlug?: string) {
-  const locality = areaSlug ? city.localities.find((l) => l.slug === areaSlug.toLowerCase()) : undefined;
+  const locality = areaSlug
+    ? city.localities.find((l) => l.slug === areaSlug.toLowerCase())
+    : undefined;
   const place = locality ? `${locality.name}, ${city.name}` : city.name;
   const match: Record<string, unknown> = { city: city.slug, specialty: specialty.slug };
   if (locality) match.area = locality.name;
 
   const [statsRow, areaRows, cityRows, top, facilities, relatedDocs] = await Promise.all([
-    Doctors.find(match, { projection: STATS_FIELDS }).then((docs) => (docs.length ? [summarise(docs)] : [])),
+    Doctors.find(match, { projection: STATS_FIELDS }).then((docs) =>
+      docs.length ? [summarise(docs)] : [],
+    ),
     Doctors.countBy('area', { city: city.slug, specialty: specialty.slug }),
     Doctors.countBy('city', { specialty: specialty.slug }),
-    Doctors.find({ ...match, reviewCount: { $gt: 0 } }, { projection: { slug: 1, name: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, fee: 1, feeVerified: 1 }, sort: { rating: -1, reviewCount: -1, slug: 1 }, limit: 5 }),
-    Facilities.find({ city: city.slug, specialties: specialty.slug }, { projection: { slug: 1, name: 1, area: 1, type: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 6 }),
-    SpecialtyModel.find({ slug: { $in: specialty.related ?? [] } }, { slug: 1, name: 1, plural: 1, icon: 1 }).lean(),
+    Doctors.find(
+      { ...match, reviewCount: { $gt: 0 } },
+      {
+        projection: {
+          slug: 1,
+          name: 1,
+          experienceYears: 1,
+          rating: 1,
+          reviewCount: 1,
+          area: 1,
+          clinicName: 1,
+          fee: 1,
+          feeVerified: 1,
+        },
+        sort: { rating: -1, reviewCount: -1, slug: 1 },
+        limit: 5,
+      },
+    ),
+    Facilities.find(
+      { city: city.slug, specialties: specialty.slug },
+      {
+        projection: { slug: 1, name: 1, area: 1, type: 1 },
+        sort: { rating: -1, rankScore: -1, slug: 1 },
+        limit: 6,
+      },
+    ),
+    SpecialtyModel.find(
+      { slug: { $in: specialty.related ?? [] } },
+      { slug: 1, name: 1, plural: 1, icon: 1 },
+    ).lean(),
   ]);
 
   const stats = statsRow[0];
@@ -85,7 +134,9 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     count
       ? `Consultation fees for ${plural} in ${place} range from ${inr(stats!.minFee)} to ${inr(stats!.maxFee)}, with an average of about ${inr(stats!.avgFee)}. Doctors listed here have an average of ${Math.round(stats!.experience)} years of experience${stats!.reviews ? ` and a ${(Math.round(stats!.rating * 10) / 10).toFixed(1)}★ average rating from ${stats!.reviews.toLocaleString('en-IN')} patient reviews` : ''}.`
       : '',
-    topAreas.length && !locality ? `You will find ${plural} across ${city.name}, including ${list(topAreas)}.` : '',
+    topAreas.length && !locality
+      ? `You will find ${plural} across ${city.name}, including ${list(topAreas)}.`
+      : '',
   ].filter(Boolean);
 
   const faqs: { question: string; answer: string }[] = [];
@@ -131,7 +182,8 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     });
   }
 
-  const otherCities = allCities().filter((c) => c.slug !== city.slug && (byCity.get(c.slug) ?? 0) > 0)
+  const otherCities = allCities()
+    .filter((c) => c.slug !== city.slug && (byCity.get(c.slug) ?? 0) > 0)
     .map((c) => ({ slug: c.slug, name: c.name, count: byCity.get(c.slug) ?? 0 }));
 
   return {
@@ -146,7 +198,9 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
       subSpecialties: specialty.subSpecialties ?? [],
     },
     city: { slug: city.slug, name: city.name, state: city.state },
-    locality: locality ? { slug: locality.slug, name: locality.name, pincode: locality.pincode } : null,
+    locality: locality
+      ? { slug: locality.slug, name: locality.name, pincode: locality.pincode }
+      : null,
     place,
     stats: {
       doctors: count,
@@ -165,12 +219,30 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
     conditions,
     whenToSee: specialty.whenToSee ?? [],
     faqs,
-    topDoctors: top.map((d) => ({ slug: d.slug, name: d.name, experienceYears: d.experienceYears, rating: d.rating, reviewCount: d.reviewCount, area: d.area, fee: d.fee, feeVerified: d.feeVerified !== false })),
+    topDoctors: top.map((d) => ({
+      slug: d.slug,
+      name: d.name,
+      experienceYears: d.experienceYears,
+      rating: d.rating,
+      reviewCount: d.reviewCount,
+      area: d.area,
+      fee: d.fee,
+      feeVerified: d.feeVerified !== false,
+    })),
     facilities: facilities.map((f) => ({ slug: f.slug, name: f.name, area: f.area, type: f.type })),
     localities,
     otherCities,
-    related: relatedDocs.map((r) => ({ slug: r.slug, name: r.name, plural: r.plural, icon: r.icon })),
-    relatedConditions: allConditions().filter((c) => c.specialty === specialty.slug).map((c) => ({ slug: c.slug, name: c.name })),
-    surgeries: allSurgeries().filter((s) => s.specialty === specialty.slug).map((s) => ({ slug: s.slug, name: s.name })),
+    related: relatedDocs.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      plural: r.plural,
+      icon: r.icon,
+    })),
+    relatedConditions: allConditions()
+      .filter((c) => c.specialty === specialty.slug)
+      .map((c) => ({ slug: c.slug, name: c.name })),
+    surgeries: allSurgeries()
+      .filter((s) => s.specialty === specialty.slug)
+      .map((s) => ({ slug: s.slug, name: s.name })),
   };
 }

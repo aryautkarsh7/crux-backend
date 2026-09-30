@@ -28,7 +28,8 @@ export function toDto<T extends { _id: unknown }>(doc: T, keepDates = false) {
 }
 
 /** Human-readable reference such as CRX-3F9A21BC. */
-export const reference = (prefix: string) => `${prefix}-${randomBytes(4).toString('hex').toUpperCase()}`;
+export const reference = (prefix: string) =>
+  `${prefix}-${randomBytes(4).toString('hex').toUpperCase()}`;
 
 /** Escapes user input for use inside a RegExp. */
 export const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

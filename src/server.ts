@@ -9,7 +9,9 @@ const app = await buildApp();
 
 try {
   const uri = await connectDatabase();
-  app.log.info(`mongodb connected (${uri.includes('127.0.0.1') || uri.includes('localhost') ? 'local' : 'remote'})`);
+  app.log.info(
+    `mongodb connected (${uri.includes('127.0.0.1') || uri.includes('localhost') ? 'local' : 'remote'})`,
+  );
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 } catch (error) {
   app.log.error({ err: error }, 'failed to start');
@@ -22,13 +24,15 @@ if (env.NODE_ENV !== 'test') {
   ensureCatalogue((m) => app.log.info(m))
     .then((ran) => ran && app.log.info('catalogue synced'))
     .catch((err) => app.log.error({ err }, 'catalogue sync failed'));
-  const prune = () => pruneSlots().then((n) => n && app.log.info(`pruned ${n} past slots`)).catch(() => {});
+  const prune = () =>
+    pruneSlots()
+      .then((n) => n && app.log.info(`pruned ${n} past slots`))
+      .catch(() => {});
   setTimeout(prune, 60_000).unref();
   setInterval(prune, 6 * 60 * 60 * 1000).unref();
   // Doctar doctors and hospitals: the saved index is served at once, then rebuilt from Doctar in the background.
   startDirectory().catch((err) => app.log.error({ err }, 'doctar directory failed to start'));
 }
-
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {

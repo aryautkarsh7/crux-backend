@@ -14,7 +14,14 @@ import { buildRoster, scheduleForExisting } from './data/doctor-network.js';
 import { ORIGINAL_DOCTOR_META, generateDoctors } from './data/doctors.js';
 import { buildFacilities } from './data/facility-network.js';
 import { LAB_CATEGORIES, LAB_TESTS } from './data/lab-tests.js';
-import { BANGALORE_IMAGING, BASIC_TESTS, LABS, REFERENCE_ONLY, buildCityLabs, type LabProfile } from './data/labs.js';
+import {
+  BANGALORE_IMAGING,
+  BASIC_TESTS,
+  LABS,
+  REFERENCE_ONLY,
+  buildCityLabs,
+  type LabProfile,
+} from './data/labs.js';
 import { MEDICINES, MEDICINE_CATEGORIES } from './data/medicines.js';
 import { FEMALE_PORTRAITS, MALE_PORTRAITS } from './data/portraits.js';
 import { generateReviews } from './data/reviews.js';
@@ -40,7 +47,12 @@ import { MetaModel } from '../models/meta.model.js';
 import { OrderModel } from '../models/order.model.js';
 import { ReviewModel } from '../models/review.model.js';
 import { SlotModel } from '../models/slot.model.js';
-import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../models/site.model.js';
+import {
+  ContentModel,
+  PlanModel,
+  SiteSettingModel,
+  TestimonialModel,
+} from '../models/site.model.js';
 import { SpecialtyModel } from '../models/specialty.model.js';
 import { UserModel } from '../models/user.model.js';
 
@@ -49,7 +61,10 @@ export const DATA_VERSION = '2026-09-30.4';
 
 type Log = (message: string) => void;
 
-type Upsertable = { bulkWrite: (ops: any[], opts?: any) => Promise<unknown>; distinct: (field: string, filter: object) => Promise<unknown[]> };
+type Upsertable = {
+  bulkWrite: (ops: any[], opts?: any) => Promise<unknown>;
+  distinct: (field: string, filter: object) => Promise<unknown[]>;
+};
 
 /** Records the sync must never overwrite or delete: admin-managed ones and imports (e.g. from Doctar). */
 const PROTECTED = { $or: [{ managed: true }, { source: { $nin: [null, ''] } }] };
@@ -59,21 +74,35 @@ const upsertAll = async (model: Upsertable, docs: readonly { slug: string }[]) =
   const managed = new Set((await model.distinct('slug', PROTECTED)) as string[]);
   const writable = docs.filter((d) => !managed.has(d.slug));
   for (let i = 0; i < writable.length; i += 500) {
-    await model.bulkWrite(writable.slice(i, i + 500).map((d) => ({ updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true } })), { ordered: false });
+    await model.bulkWrite(
+      writable.slice(i, i + 500).map((d) => ({
+        updateOne: { filter: { slug: d.slug }, update: { $set: d }, upsert: true },
+      })),
+      { ordered: false },
+    );
   }
 };
 
 /** Seed records that are no longer in the code data — never admin-managed or imported ones. */
-const stale = (slugs: string[]) => ({ slug: { $nin: slugs }, managed: { $ne: true }, source: { $in: [null, ''] } });
+const stale = (slugs: string[]) => ({
+  slug: { $nin: slugs },
+  managed: { $ne: true },
+  source: { $in: [null, ''] },
+});
 
 /**
  * Seed doctors, facilities, reviews and testimonials are sample data (lib/sample-data.ts). With
  * SHOW_SAMPLE_DATA off the sync never writes, restores or deletes them, so a deploy can't bring them back;
  * it only flags the stored ones, so editing one in the admin panel doesn't publish it.
  */
-const flagSample = (model: { updateMany: (filter: object, update: object) => unknown }, seed: object) =>
-  model.updateMany({ ...seed, sample: { $exists: false } }, { $set: { sample: true } });
-const seedSlugs = (docs: readonly { slug: string }[]) => ({ slug: { $in: docs.map((d) => d.slug) }, source: { $in: [null, ''] } });
+const flagSample = (
+  model: { updateMany: (filter: object, update: object) => unknown },
+  seed: object,
+) => model.updateMany({ ...seed, sample: { $exists: false } }, { $set: { sample: true } });
+const seedSlugs = (docs: readonly { slug: string }[]) => ({
+  slug: { $in: docs.map((d) => d.slug) },
+  source: { $in: [null, ''] },
+});
 /** Generated reviews have no patient; the team's own (managed) ones are real. */
 const SEED_REVIEWS = { user: { $exists: false }, managed: { $ne: true } };
 
@@ -82,61 +111,215 @@ export const syncCatalogue = (log: Log = () => {}) => withSampleData(() => sync(
 
 async function sync(log: Log) {
   const started = Date.now();
-  const step = (m: string) => log(`[catalogue] ${m} (${Math.round((Date.now() - started) / 100) / 10}s)`);
+  const step = (m: string) =>
+    log(`[catalogue] ${m} (${Math.round((Date.now() - started) / 100) / 10}s)`);
 
   // ---- Specialties ----
-  await upsertAll(SpecialtyModel, SPECIALTIES.map((s, order) => ({
-    order, homeOrder: SITE.HOME_SPECIALTIES.indexOf(s.slug) + 1,
-    slug: s.slug, name: s.name, plural: s.plural, icon: s.icon, category: s.category, description: s.description,
-    fromPrice: s.feeRange[0], videoFrom: s.videoRange[0], feeRange: s.feeRange, video: s.video, popular: Boolean(s.popular),
-    conditions: s.conditions, keywords: s.keywords, whenToSee: s.whenToSee, related: s.related, subSpecialties: s.subSpecialties,
-  })));
+  await upsertAll(
+    SpecialtyModel,
+    SPECIALTIES.map((s, order) => ({
+      order,
+      homeOrder: SITE.HOME_SPECIALTIES.indexOf(s.slug) + 1,
+      slug: s.slug,
+      name: s.name,
+      plural: s.plural,
+      icon: s.icon,
+      category: s.category,
+      description: s.description,
+      fromPrice: s.feeRange[0],
+      videoFrom: s.videoRange[0],
+      feeRange: s.feeRange,
+      video: s.video,
+      popular: Boolean(s.popular),
+      conditions: s.conditions,
+      keywords: s.keywords,
+      whenToSee: s.whenToSee,
+      related: s.related,
+      subSpecialties: s.subSpecialties,
+    })),
+  );
   await SpecialtyModel.deleteMany(stale(SPECIALTIES.map((s) => s.slug)));
   step('specialties');
 
   // ---- Cities, conditions, surgeries (their slugs are URLs) ----
   const rank = (list: string[], slug: string) => list.indexOf(slug) + 1;
-  await upsertAll(CityModel, CITIES.map((c, order) => ({ ...c, order, popularOrder: rank(SITE.POPULAR_CITIES, c.slug) })));
+  await upsertAll(
+    CityModel,
+    CITIES.map((c, order) => ({ ...c, order, popularOrder: rank(SITE.POPULAR_CITIES, c.slug) })),
+  );
   await CityModel.deleteMany(stale(CITIES.map((c) => c.slug)));
-  await upsertAll(ConditionModel, CONDITIONS.map((c, order) => ({ ...c, popular: c.popular ?? '', order, popularOrder: rank(SITE.POPULAR_CONDITIONS, c.slug) })));
+  await upsertAll(
+    ConditionModel,
+    CONDITIONS.map((c, order) => ({
+      ...c,
+      popular: c.popular ?? '',
+      order,
+      popularOrder: rank(SITE.POPULAR_CONDITIONS, c.slug),
+    })),
+  );
   await ConditionModel.deleteMany(stale(CONDITIONS.map((c) => c.slug)));
-  await upsertAll(SurgeryModel, SURGERIES.map((s, order) => ({ ...s, popular: Boolean(s.popular), order })));
+  await upsertAll(
+    SurgeryModel,
+    SURGERIES.map((s, order) => ({ ...s, popular: Boolean(s.popular), order })),
+  );
   await SurgeryModel.deleteMany(stale(SURGERIES.map((s) => s.slug)));
   step('cities, conditions, surgeries');
 
   // ---- Website content ----
-  const section = (slug: string, page: string, sectionKey: string, label: string, items: unknown[], extra: { title?: string; intro?: string } = {}) =>
-    ({ slug, page, section: sectionKey, label, items, title: extra.title ?? '', intro: extra.intro ?? '', published: true });
+  const section = (
+    slug: string,
+    page: string,
+    sectionKey: string,
+    label: string,
+    items: unknown[],
+    extra: { title?: string; intro?: string } = {},
+  ) => ({
+    slug,
+    page,
+    section: sectionKey,
+    label,
+    items,
+    title: extra.title ?? '',
+    intro: extra.intro ?? '',
+    published: true,
+  });
   const content = [
-    section('home-faqs', 'home', 'faqs', 'Homepage FAQs', SITE.HOME_FAQS, { title: 'Frequently Asked Questions', intro: 'Booking, prescriptions, refunds and health records — the questions patients ask us most.' }),
-    section('home-bands', 'home', 'bands', 'Homepage feature sections (spec 2, 5, 6, 7)', SITE.HOME_BANDS),
-    section('home-services', 'home', 'services', 'Homepage care ecosystem cards', SITE.HOME_SERVICES),
-    section('home-how-it-works', 'home', 'how-it-works', 'How Curxx Works steps', SITE.HOME_HOW_IT_WORKS),
-    section('shared-partner-sections', 'shared', 'partner-sections', 'Partner programmes (homepage and Partner With Us)', SITE.PARTNER_SECTIONS),
-    section('shared-trust-badges', 'shared', 'trust-badges', 'Trust & compliance badges', SITE.TRUST_BADGES),
-    section('curxx-plus-benefits', 'curxx-plus', 'benefits', 'Curxx Plus benefits', SITE.PLUS_BENEFITS),
-    section('curxx-plus-faqs', 'curxx-plus', 'faqs', 'Curxx Plus FAQs', SITE.PLUS_FAQS, { title: 'Curxx Plus: Frequently Asked Questions' }),
-    section('for-providers-faqs', 'for-providers', 'faqs', 'For Providers FAQs', SITE.PROVIDER_FAQS, { title: 'Frequently Asked Questions' }),
-    section('lab-tests-trending', 'lab-tests', 'trending', 'Lab tests: trending searches', SITE.LAB_TRENDING_SEARCHES),
-    section('lab-tests-symptoms', 'lab-tests', 'symptoms', 'Lab tests: shop by symptom', SITE.LAB_SYMPTOMS),
-    section('medicines-popular-searches', 'medicines', 'popular-searches', 'Medicines: popular searches', SITE.MEDICINE_POPULAR_SEARCHES),
+    section('home-faqs', 'home', 'faqs', 'Homepage FAQs', SITE.HOME_FAQS, {
+      title: 'Frequently Asked Questions',
+      intro:
+        'Booking, prescriptions, refunds and health records — the questions patients ask us most.',
+    }),
+    section(
+      'home-bands',
+      'home',
+      'bands',
+      'Homepage feature sections (spec 2, 5, 6, 7)',
+      SITE.HOME_BANDS,
+    ),
+    section(
+      'home-services',
+      'home',
+      'services',
+      'Homepage care ecosystem cards',
+      SITE.HOME_SERVICES,
+    ),
+    section(
+      'home-how-it-works',
+      'home',
+      'how-it-works',
+      'How Curxx Works steps',
+      SITE.HOME_HOW_IT_WORKS,
+    ),
+    section(
+      'shared-partner-sections',
+      'shared',
+      'partner-sections',
+      'Partner programmes (homepage and Partner With Us)',
+      SITE.PARTNER_SECTIONS,
+    ),
+    section(
+      'shared-trust-badges',
+      'shared',
+      'trust-badges',
+      'Trust & compliance badges',
+      SITE.TRUST_BADGES,
+    ),
+    section(
+      'curxx-plus-benefits',
+      'curxx-plus',
+      'benefits',
+      'Curxx Plus benefits',
+      SITE.PLUS_BENEFITS,
+    ),
+    section('curxx-plus-faqs', 'curxx-plus', 'faqs', 'Curxx Plus FAQs', SITE.PLUS_FAQS, {
+      title: 'Curxx Plus: Frequently Asked Questions',
+    }),
+    section(
+      'for-providers-faqs',
+      'for-providers',
+      'faqs',
+      'For Providers FAQs',
+      SITE.PROVIDER_FAQS,
+      { title: 'Frequently Asked Questions' },
+    ),
+    section(
+      'lab-tests-trending',
+      'lab-tests',
+      'trending',
+      'Lab tests: trending searches',
+      SITE.LAB_TRENDING_SEARCHES,
+    ),
+    section(
+      'lab-tests-symptoms',
+      'lab-tests',
+      'symptoms',
+      'Lab tests: shop by symptom',
+      SITE.LAB_SYMPTOMS,
+    ),
+    section(
+      'medicines-popular-searches',
+      'medicines',
+      'popular-searches',
+      'Medicines: popular searches',
+      SITE.MEDICINE_POPULAR_SEARCHES,
+    ),
     section('medicines-trust', 'medicines', 'trust', 'Medicines: trust strip', SITE.MEDICINE_TRUST),
-    ...Object.entries(SITE.LEGAL_PAGES).map(([page, legal]) => section(`${page}-policy`, page, 'policy', `${legal.title} (legal)`, legal.sections, { title: legal.title, intro: legal.intro })),
-    section(SURGERY_CATEGORIES_SLUG, 'catalogue', 'surgery-categories', 'Surgery categories (order on the Surgeries page)', SURGERY_CATEGORIES),
+    ...Object.entries(SITE.LEGAL_PAGES).map(([page, legal]) =>
+      section(`${page}-policy`, page, 'policy', `${legal.title} (legal)`, legal.sections, {
+        title: legal.title,
+        intro: legal.intro,
+      }),
+    ),
+    section(
+      SURGERY_CATEGORIES_SLUG,
+      'catalogue',
+      'surgery-categories',
+      'Surgery categories (order on the Surgeries page)',
+      SURGERY_CATEGORIES,
+    ),
   ].map((c, order) => ({ ...c, order }));
   await upsertAll(ContentModel, content);
   await ContentModel.deleteMany(stale(content.map((c) => c.slug)));
   await upsertAll(SiteSettingModel, SITE.SITE_SETTINGS);
   await SiteSettingModel.deleteMany(stale(SITE.SITE_SETTINGS.map((s) => s.slug)));
-  const testimonials = SITE.TESTIMONIALS.map((t, order) => ({ badge: { icon: '', label: '' }, doctorSlug: '', ...t, order, published: true, sample: true }));
+  const testimonials = SITE.TESTIMONIALS.map((t, order) => ({
+    badge: { icon: '', label: '' },
+    doctorSlug: '',
+    ...t,
+    order,
+    published: true,
+    sample: true,
+  }));
   if (env.SHOW_SAMPLE_DATA) {
     await upsertAll(TestimonialModel, testimonials);
     await TestimonialModel.deleteMany(stale(testimonials.map((t) => t.slug)));
   }
   await flagSample(TestimonialModel, { slug: { $in: testimonials.map((t) => t.slug) } });
   const plans = [
-    ...SITE.PLUS_PLANS.map((p, order) => ({ slug: p.id, audience: 'plus', name: p.name, tagline: '', price: p.price, period: 'year', members: p.members, highlight: p.highlight, badge: p.highlight ? 'Most popular' : '', perks: p.perks, excluded: [], ctaLabel: `Choose ${p.name}`, order, published: true })),
-    ...SITE.PROVIDER_PLANS.map(({ id, ...p }, order) => ({ slug: id, audience: 'provider', members: '', ...p, order, published: true })),
+    ...SITE.PLUS_PLANS.map((p, order) => ({
+      slug: p.id,
+      audience: 'plus',
+      name: p.name,
+      tagline: '',
+      price: p.price,
+      period: 'year',
+      members: p.members,
+      highlight: p.highlight,
+      badge: p.highlight ? 'Most popular' : '',
+      perks: p.perks,
+      excluded: [],
+      ctaLabel: `Choose ${p.name}`,
+      order,
+      published: true,
+    })),
+    ...SITE.PROVIDER_PLANS.map(({ id, ...p }, order) => ({
+      slug: id,
+      audience: 'provider',
+      members: '',
+      ...p,
+      order,
+      published: true,
+    })),
   ];
   await upsertAll(PlanModel, plans);
   await PlanModel.deleteMany(stale(plans.map((p) => p.slug)));
@@ -149,7 +332,9 @@ async function sync(log: Log) {
     await FacilityModel.deleteMany(stale(facilities.map((f) => f.slug)));
   }
   await flagSample(FacilityModel, seedSlugs(facilities));
-  step(`facilities ${facilities.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
+  step(
+    `facilities ${facilities.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`,
+  );
 
   // ---- Pharmacy ----
   await upsertAll(MedicineCategoryModel, MEDICINE_CATEGORIES);
@@ -158,16 +343,34 @@ async function sync(log: Log) {
   // ---- Lab catalogue: curated tests + the full diagnostic directory ----
   const directory = buildDirectory();
   await upsertAll(LabCategoryModel, [
-    ...LAB_CATEGORIES.map((c, order) => ({ slug: c.slug, name: c.name, icon: c.icon, order, group: 'concern' })),
-    ...DEPARTMENTS.map((d, i) => ({ slug: d.slug, name: d.name, icon: d.icon, order: 100 + i, group: 'department' })),
+    ...LAB_CATEGORIES.map((c, order) => ({
+      slug: c.slug,
+      name: c.name,
+      icon: c.icon,
+      order,
+      group: 'concern',
+    })),
+    ...DEPARTMENTS.map((d, i) => ({
+      slug: d.slug,
+      name: d.name,
+      icon: d.icon,
+      order: 100 + i,
+      group: 'department',
+    })),
   ]);
-  await upsertAll(LabTestModel, LAB_TESTS.map((t) => ({
-    ...t,
-    homeCollection: true,
-    categories: [...new Set([...t.categories, ...(directory.existingTags.get(t.slug) ?? [])])],
-  })));
+  await upsertAll(
+    LabTestModel,
+    LAB_TESTS.map((t) => ({
+      ...t,
+      homeCollection: true,
+      categories: [...new Set([...t.categories, ...(directory.existingTags.get(t.slug) ?? [])])],
+    })),
+  );
   await upsertAll(LabTestModel, directory.tests);
-  const catalogue = await LabTestModel.find({}, { slug: 1, kind: 1, homeCollection: 1, department: 1, price: 1 }).lean();
+  const catalogue = await LabTestModel.find(
+    {},
+    { slug: 1, kind: 1, homeCollection: 1, department: 1, price: 1 },
+  ).lean();
   await LabTestModel.deleteMany(stale(catalogue.map((t) => t.slug)));
   step(`lab tests ${catalogue.length}`);
 
@@ -175,15 +378,31 @@ async function sync(log: Log) {
   const curatedRoutine = LAB_TESTS.map((t) => t.slug).filter((s) => !REFERENCE_ONLY.includes(s));
   const routineDepts = new Set(['blood-tests', 'urine-tests', 'stool-tests', 'rapid-tests']);
   const menu: Record<LabProfile, string[]> = {
-    reference: catalogue.filter((t) => t.kind === 'package' || t.kind === 'test').map((t) => t.slug),
-    routine: [...curatedRoutine, ...catalogue.filter((t) => t.kind === 'test' && routineDepts.has(t.department ?? '') && t.price <= 1500).map((t) => t.slug)],
-    imaging: [...catalogue.filter((t) => t.kind === 'scan' || t.kind === 'procedure').map((t) => t.slug), 'complete-blood-count', 'fasting-blood-sugar', 'urine-routine', 'lipid-profile', 'hba1c'],
+    reference: catalogue
+      .filter((t) => t.kind === 'package' || t.kind === 'test')
+      .map((t) => t.slug),
+    routine: [
+      ...curatedRoutine,
+      ...catalogue
+        .filter((t) => t.kind === 'test' && routineDepts.has(t.department ?? '') && t.price <= 1500)
+        .map((t) => t.slug),
+    ],
+    imaging: [
+      ...catalogue.filter((t) => t.kind === 'scan' || t.kind === 'procedure').map((t) => t.slug),
+      'complete-blood-count',
+      'fasting-blood-sugar',
+      'urine-routine',
+      'lipid-profile',
+      'hba1c',
+    ],
     basic: BASIC_TESTS,
   };
   const labs = [
     ...LABS.map((l) => ({ ...l, city: 'bangalore', tests: menu[l.profile as LabProfile] })),
     ...BANGALORE_IMAGING.map((l) => ({ ...l, city: 'bangalore', tests: menu.imaging })),
-    ...CITIES.filter((c) => c.slug !== 'bangalore').flatMap((c) => buildCityLabs(c).map((l) => ({ ...l, city: c.slug, tests: menu[l.profile] }))),
+    ...CITIES.filter((c) => c.slug !== 'bangalore').flatMap((c) =>
+      buildCityLabs(c).map((l) => ({ ...l, city: c.slug, tests: menu[l.profile] })),
+    ),
   ];
   await upsertAll(LabModel, labs);
   await LabModel.deleteMany(stale(labs.map((l) => l.slug)));
@@ -191,25 +410,50 @@ async function sync(log: Log) {
 
   // ---- Doctors ----
   const facilityBySlug = new Map(facilities.map((f) => [f.slug, f]));
-  const legacySubs = Object.fromEntries(SPECIALTIES.map((sp) => [sp.slug, sp.subSpecialties.map((sub) => sub.slug)]));
+  const legacySubs = Object.fromEntries(
+    SPECIALTIES.map((sp) => [sp.slug, sp.subSpecialties.map((sub) => sub.slug)]),
+  );
   const existingCount: Record<string, number> = {};
   for (const d of DOCTORS) existingCount[d.specialty] = (existingCount[d.specialty] ?? 0) + 1;
-  const legacyGenerated = generateDoctors(existingCount, new Set(DOCTORS.map((d) => d.slug)), legacySubs);
+  const legacyGenerated = generateDoctors(
+    existingCount,
+    new Set(DOCTORS.map((d) => d.slug)),
+    legacySubs,
+  );
 
   // Portraits: keep the originals that match, then hand out gender-matched ones round-robin.
-  const usedPhotos = new Set(DOCTORS.filter((d) => ORIGINAL_DOCTOR_META[d.slug]?.keepPhoto).map((d) => d.photoUrl));
-  const pools = { female: FEMALE_PORTRAITS.filter((u) => !usedPhotos.has(u)), male: MALE_PORTRAITS.filter((u) => !usedPhotos.has(u)) };
+  const usedPhotos = new Set(
+    DOCTORS.filter((d) => ORIGINAL_DOCTOR_META[d.slug]?.keepPhoto).map((d) => d.photoUrl),
+  );
+  const pools = {
+    female: FEMALE_PORTRAITS.filter((u) => !usedPhotos.has(u)),
+    male: MALE_PORTRAITS.filter((u) => !usedPhotos.has(u)),
+  };
   const cursor = { female: 0, male: 0 };
   const nextPortrait = (gender: 'female' | 'male') => {
-    const pool = pools[gender].length ? pools[gender] : gender === 'female' ? FEMALE_PORTRAITS : MALE_PORTRAITS;
+    const pool = pools[gender].length
+      ? pools[gender]
+      : gender === 'female'
+        ? FEMALE_PORTRAITS
+        : MALE_PORTRAITS;
     return pool[cursor[gender]++ % pool.length]!;
   };
 
-  const INSTITUTES = ['AIIMS New Delhi', 'Bangalore Medical College', 'CMC Vellore', 'Kasturba Medical College, Manipal', 'St. John’s Medical College, Bengaluru', 'JIPMER Puducherry'];
+  const INSTITUTES = [
+    'AIIMS New Delhi',
+    'Bangalore Medical College',
+    'CMC Vellore',
+    'Kasturba Medical College, Manipal',
+    'St. John’s Medical College, Bengaluru',
+    'JIPMER Puducherry',
+  ];
   const bangalore = [
     ...DOCTORS.map((d, i) => {
       const meta = ORIGINAL_DOCTOR_META[d.slug]!;
-      const parts = d.qualification.split(',').map((q) => q.trim()).filter(Boolean);
+      const parts = d.qualification
+        .split(',')
+        .map((q) => q.trim())
+        .filter(Boolean);
       const graduated = 2026 - d.experienceYears - 3;
       return {
         ...d,
@@ -217,15 +461,24 @@ async function sync(log: Log) {
         facilitySlug: meta.facilitySlug,
         photoUrl: meta.keepPhoto ? d.photoUrl : nextPortrait(meta.gender),
         focusAreas: FOCUS_AREAS[d.slug] ?? [],
-        education: parts.map((degree, k) => ({ degree, institute: INSTITUTES[(i + k * 2) % INSTITUTES.length]!, year: graduated - (parts.length - 1 - k) * 3 })),
+        education: parts.map((degree, k) => ({
+          degree,
+          institute: INSTITUTES[(i + k * 2) % INSTITUTES.length]!,
+          year: graduated - (parts.length - 1 - k) * 3,
+        })),
         registration: `KMC ${48000 + i * 1379}`,
       };
     }),
     ...legacyGenerated.map((d) => ({ ...d, photoUrl: nextPortrait(d.gender) })),
   ].map((d) => {
     const facility = facilityBySlug.get(d.facilitySlug);
-    const specialtyName = SPECIALTIES.find((sp) => sp.slug === d.specialty)?.name.toLowerCase() ?? 'doctor';
-    const { schedule, consultHours, freeVideo } = scheduleForExisting(facility, d.specialty, d.slug);
+    const specialtyName =
+      SPECIALTIES.find((sp) => sp.slug === d.specialty)?.name.toLowerCase() ?? 'doctor';
+    const { schedule, consultHours, freeVideo } = scheduleForExisting(
+      facility,
+      d.specialty,
+      d.slug,
+    );
     return {
       ...d,
       city: 'bangalore',
@@ -239,17 +492,33 @@ async function sync(log: Log) {
     };
   });
 
-  const roster = buildRoster({ facilities, bangaloreExisting: bangalore.map((d) => ({ slug: d.slug, specialty: d.specialty, facilitySlug: d.facilitySlug })) })
-    .map((d) => ({ ...d, photoUrl: nextPortrait(d.gender) }));
-  const everyone = [...bangalore, ...roster].map((d) => ({ ...d, verified: true, slotsThrough: null, sample: true }));
+  const roster = buildRoster({
+    facilities,
+    bangaloreExisting: bangalore.map((d) => ({
+      slug: d.slug,
+      specialty: d.specialty,
+      facilitySlug: d.facilitySlug,
+    })),
+  }).map((d) => ({ ...d, photoUrl: nextPortrait(d.gender) }));
+  const everyone = [...bangalore, ...roster].map((d) => ({
+    ...d,
+    verified: true,
+    slotsThrough: null,
+    sample: true,
+  }));
   if (env.SHOW_SAMPLE_DATA) {
     await upsertAll(DoctorModel, everyone as never);
     await DoctorModel.deleteMany(stale(everyone.map((d) => d.slug)));
   }
   await flagSample(DoctorModel, seedSlugs(everyone));
   // Admin-added and imported doctors keep their slots too.
-  const slugs = [...everyone.map((d) => d.slug), ...((await DoctorModel.distinct('slug', PROTECTED)) as string[])];
-  step(`doctors ${everyone.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
+  const slugs = [
+    ...everyone.map((d) => d.slug),
+    ...((await DoctorModel.distinct('slug', PROTECTED)) as string[]),
+  ];
+  step(
+    `doctors ${everyone.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`,
+  );
 
   // ---- Slots: schedules may have changed, so clear unbooked future slots; they regenerate on demand ----
   await SlotModel.deleteMany({ status: 'open' });
@@ -259,8 +528,11 @@ async function sync(log: Log) {
   // ---- Reviews: regenerate seeded ones, keep patient-written ones, then derive every count from them ----
   if (env.SHOW_SAMPLE_DATA) {
     await ReviewModel.deleteMany(SEED_REVIEWS);
-    const seeded = generateReviews(everyone.map((d) => ({ slug: d.slug, specialty: d.specialty }))).map((r) => ({ ...r, sample: true }));
-    for (let i = 0; i < seeded.length; i += 2000) await ReviewModel.insertMany(seeded.slice(i, i + 2000), { ordered: false });
+    const seeded = generateReviews(
+      everyone.map((d) => ({ slug: d.slug, specialty: d.specialty })),
+    ).map((r) => ({ ...r, sample: true }));
+    for (let i = 0; i < seeded.length; i += 2000)
+      await ReviewModel.insertMany(seeded.slice(i, i + 2000), { ordered: false });
     await refreshDoctorRatings();
   }
   await flagSample(ReviewModel, SEED_REVIEWS);
@@ -268,18 +540,51 @@ async function sync(log: Log) {
 
   // ---- Articles: curated + one per condition, authored by a matching Bangalore doctor ----
   const authorFor = new Map<string, { name: string; slug: string; title: string }>();
-  for (const d of bangalore) if (!authorFor.has(d.specialty)) authorFor.set(d.specialty, { name: d.name, slug: d.slug, title: d.title });
+  for (const d of bangalore)
+    if (!authorFor.has(d.specialty))
+      authorFor.set(d.specialty, { name: d.name, slug: d.slug, title: d.title });
   const roster1 = new Map<string, { name: string; slug: string; title: string }>();
-  for (const d of roster) if (d.city === 'bangalore' && !roster1.has(d.specialty)) roster1.set(d.specialty, { name: d.name, slug: d.slug, title: d.title });
+  for (const d of roster)
+    if (d.city === 'bangalore' && !roster1.has(d.specialty))
+      roster1.set(d.specialty, { name: d.name, slug: d.slug, title: d.title });
   const conditionArticles = buildConditionArticles().map(({ authorSpecialty, ...a }) => ({
     ...a,
-    author: authorFor.get(authorSpecialty) ?? roster1.get(authorSpecialty) ?? authorFor.get('general-physician')!,
+    author:
+      authorFor.get(authorSpecialty) ??
+      roster1.get(authorSpecialty) ??
+      authorFor.get('general-physician')!,
   }));
   await upsertAll(ArticleModel, [...ARTICLES, ...conditionArticles]);
   step(`articles ${ARTICLES.length + conditionArticles.length}`);
 
   await Promise.all(
-    [CityModel, ConditionModel, SurgeryModel, ContentModel, SiteSettingModel, TestimonialModel, PlanModel, SpecialtyModel, DoctorModel, SlotModel, FacilityModel, MedicineModel, MedicineCategoryModel, LabTestModel, LabCategoryModel, LabModel, ArticleModel, ReviewModel, OrderModel, HealthRecordModel, AccessGrantModel, AppointmentModel, MessageModel, LeadModel, UserModel].map((m) => (m as { syncIndexes: () => Promise<unknown> }).syncIndexes()),
+    [
+      CityModel,
+      ConditionModel,
+      SurgeryModel,
+      ContentModel,
+      SiteSettingModel,
+      TestimonialModel,
+      PlanModel,
+      SpecialtyModel,
+      DoctorModel,
+      SlotModel,
+      FacilityModel,
+      MedicineModel,
+      MedicineCategoryModel,
+      LabTestModel,
+      LabCategoryModel,
+      LabModel,
+      ArticleModel,
+      ReviewModel,
+      OrderModel,
+      HealthRecordModel,
+      AccessGrantModel,
+      AppointmentModel,
+      MessageModel,
+      LeadModel,
+      UserModel,
+    ].map((m) => (m as { syncIndexes: () => Promise<unknown> }).syncIndexes()),
   );
   step('indexes');
   await reloadCatalogue();
@@ -289,17 +594,37 @@ async function sync(log: Log) {
 /** Rating, review count and recommend % on every doctor, computed from the reviews themselves. */
 export async function refreshDoctorRatings(doctorSlugs?: string[]) {
   const match = doctorSlugs ? { doctorSlug: { $in: doctorSlugs } } : {};
-  const stats = await ReviewModel.aggregate<{ _id: string; average: number; total: number; positive: number }>([
+  const stats = await ReviewModel.aggregate<{
+    _id: string;
+    average: number;
+    total: number;
+    positive: number;
+  }>([
     { $match: match },
-    { $group: { _id: '$doctorSlug', average: { $avg: '$rating' }, total: { $sum: 1 }, positive: { $sum: { $cond: [{ $gte: ['$rating', 4] }, 1, 0] } } } },
+    {
+      $group: {
+        _id: '$doctorSlug',
+        average: { $avg: '$rating' },
+        total: { $sum: 1 },
+        positive: { $sum: { $cond: [{ $gte: ['$rating', 4] }, 1, 0] } },
+      },
+    },
   ]);
   for (let i = 0; i < stats.length; i += 1000) {
-    await DoctorModel.bulkWrite(stats.slice(i, i + 1000).map((r) => ({
-      updateOne: {
-        filter: { slug: r._id },
-        update: { $set: { rating: Math.round(r.average * 10) / 10, reviewCount: r.total, recommendPercent: Math.round((r.positive / r.total) * 100) } },
-      },
-    })) as never);
+    await DoctorModel.bulkWrite(
+      stats.slice(i, i + 1000).map((r) => ({
+        updateOne: {
+          filter: { slug: r._id },
+          update: {
+            $set: {
+              rating: Math.round(r.average * 10) / 10,
+              reviewCount: r.total,
+              recommendPercent: Math.round((r.positive / r.total) * 100),
+            },
+          },
+        },
+      })) as never,
+    );
   }
 }
 
@@ -319,10 +644,16 @@ export async function ensureCatalogue(log: Log) {
   if (!lock) return false;
   try {
     await syncCatalogue(log);
-    await MetaModel.updateOne({ _id: 'catalogue' }, { $set: { version: DATA_VERSION, running: false, syncedAt: new Date(), error: '' } });
+    await MetaModel.updateOne(
+      { _id: 'catalogue' },
+      { $set: { version: DATA_VERSION, running: false, syncedAt: new Date(), error: '' } },
+    );
     return true;
   } catch (error) {
-    await MetaModel.updateOne({ _id: 'catalogue' }, { $set: { running: false, error: String(error).slice(0, 500) } });
+    await MetaModel.updateOne(
+      { _id: 'catalogue' },
+      { $set: { running: false, error: String(error).slice(0, 500) } },
+    );
     throw error;
   }
 }

@@ -21,10 +21,16 @@ function scopeCity(raw: string) {
 /** Figures for the dynamic copy on doctor listing pages and the India pages (docs/content-templates). */
 export async function seoRoutes(app: FastifyInstance) {
   app.get('/seo/doctors', async (request, reply) => {
-    const q = z.object({ city: z.string().trim().min(2).max(40), specialty: z.string().trim().max(60).optional() }).parse(request.query);
+    const q = z
+      .object({
+        city: z.string().trim().min(2).max(40),
+        specialty: z.string().trim().max(60).optional(),
+      })
+      .parse(request.query);
     const city = scopeCity(q.city);
     const specialty = q.specialty && q.specialty !== 'doctors' ? q.specialty : null;
-    if (specialty && !(await SpecialtyModel.exists({ slug: specialty }))) throw notFound('Unknown specialty');
+    if (specialty && !(await SpecialtyModel.exists({ slug: specialty })))
+      throw notFound('Unknown specialty');
     reply.header('cache-control', SEO_CACHE);
     return doctorStats(city, specialty);
   });
@@ -50,7 +56,9 @@ export async function seoRoutes(app: FastifyInstance) {
   /** One sitemap file's worth of doctor or hospital pages. */
   app.get('/seo/sitemap/:kind', async (request, reply) => {
     const { kind } = z.object({ kind: z.enum(['doctors', 'facilities']) }).parse(request.params);
-    const { part } = z.object({ part: z.coerce.number().int().min(0).max(1000).default(0) }).parse(request.query);
+    const { part } = z
+      .object({ part: z.coerce.number().int().min(0).max(1000).default(0) })
+      .parse(request.query);
     reply.header('cache-control', SEO_CACHE);
     return sitemapPart(kind, part);
   });

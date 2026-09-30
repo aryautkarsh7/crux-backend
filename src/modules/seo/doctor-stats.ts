@@ -17,14 +17,46 @@ import { directoryVersion } from '../doctar/directory.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
 const DOCTOR_FIELDS = {
-  slug: 1, name: 1, specialty: 1, city: 1, area: 1, fee: 1, videoFee: 1, feeVerified: 1, schedule: 1, freeVideo: 1, instant: 1,
-  experienceYears: 1, rating: 1, reviewCount: 1, languages: 1, facilitySlug: 1, source: 1, bookable: 1,
+  slug: 1,
+  name: 1,
+  specialty: 1,
+  city: 1,
+  area: 1,
+  fee: 1,
+  videoFee: 1,
+  feeVerified: 1,
+  schedule: 1,
+  freeVideo: 1,
+  instant: 1,
+  experienceYears: 1,
+  rating: 1,
+  reviewCount: 1,
+  languages: 1,
+  facilitySlug: 1,
+  source: 1,
+  bookable: 1,
 } as const;
 
 type Lite = {
-  _id: unknown; slug: string; name: string; specialty: string; city: string; area: string; fee: number; videoFee: number;
-  feeVerified?: boolean | null; schedule?: any; freeVideo?: boolean | null; instant?: boolean | null; experienceYears: number;
-  rating: number; reviewCount: number; languages?: string[]; facilitySlug?: string; source?: string | null; bookable?: boolean | null;
+  _id: unknown;
+  slug: string;
+  name: string;
+  specialty: string;
+  city: string;
+  area: string;
+  fee: number;
+  videoFee: number;
+  feeVerified?: boolean | null;
+  schedule?: any;
+  freeVideo?: boolean | null;
+  instant?: boolean | null;
+  experienceYears: number;
+  rating: number;
+  reviewCount: number;
+  languages?: string[];
+  facilitySlug?: string;
+  source?: string | null;
+  bookable?: boolean | null;
 };
 
 export type FeeRange = { min: number; max: number; approx: boolean };
@@ -62,15 +94,22 @@ async function availabilityOf(docs: Lite[], now: Date) {
   if (!bookable.length) return out;
   const until = new Date(dayStart(now).getTime() + DAYS_AHEAD * 86_400_000);
   const busyRows = await SlotModel.find(
-    { doctorSlug: { $in: bookable.map((d) => d.slug) }, startsAt: { $gte: now, $lte: until }, $or: [{ status: 'booked' }, { status: 'held', holdExpiresAt: { $gte: now } }] },
+    {
+      doctorSlug: { $in: bookable.map((d) => d.slug) },
+      startsAt: { $gte: now, $lte: until },
+      $or: [{ status: 'booked' }, { status: 'held', holdExpiresAt: { $gte: now } }],
+    },
     { doctorSlug: 1, startsAt: 1 },
   ).lean();
   const busy = new Set(busyRows.map((b) => `${b.doctorSlug}|${b.startsAt.getTime()}`));
   const today = dayStart(now).getTime();
   for (const d of bookable) {
-    const times = bookingModeOf(d) === 'request'
-      ? requestTimes(d as never, now, DAYS_AHEAD)
-      : Array.from({ length: DAYS_AHEAD }, (_, i) => slotsForDay(d as never, new Date(today + i * 86_400_000), now)).flat();
+    const times =
+      bookingModeOf(d) === 'request'
+        ? requestTimes(d as never, now, DAYS_AHEAD)
+        : Array.from({ length: DAYS_AHEAD }, (_, i) =>
+            slotsForDay(d as never, new Date(today + i * 86_400_000), now),
+          ).flat();
     const open = times.filter((t) => !busy.has(`${d.slug}|${t.startsAt.getTime()}`));
     const isToday = (t: { startsAt: Date }) => dayStart(t.startsAt).getTime() === today;
     out.set(d.slug, {
@@ -83,7 +122,9 @@ async function availabilityOf(docs: Lite[], now: Date) {
 }
 
 const earliestOf = (docs: Lite[], avail: Map<string, Availability>) => {
-  const times = docs.map((d) => avail.get(d.slug)?.next?.getTime()).filter((t): t is number => t !== undefined);
+  const times = docs
+    .map((d) => avail.get(d.slug)?.next?.getTime())
+    .filter((t): t is number => t !== undefined);
   return times.length ? new Date(times.reduce((a, b) => Math.min(a, b))) : null;
 };
 
@@ -102,23 +143,39 @@ function core(docs: Lite[], avail: Map<string, Availability>) {
     videoCount: video.length,
     clinicOnlyCount: docs.length - video.length,
     freeVideoCount: docs.filter((d) => d.freeVideo && offersVideo(d)).length,
-    todayCount: docs.filter((d) => { const a = avail.get(d.slug); return a && (a.clinicToday || a.videoToday); }).length,
+    todayCount: docs.filter((d) => {
+      const a = avail.get(d.slug);
+      return a && (a.clinicToday || a.videoToday);
+    }).length,
     clinicTodayCount: clinic.filter((d) => avail.get(d.slug)?.clinicToday).length,
     videoTodayCount: video.filter((d) => avail.get(d.slug)?.videoToday).length,
     clinicFee: feeRange(clinic, (d) => d.fee),
     videoFee: feeRange(video, (d) => d.videoFee),
     earliest: earliestOf(docs, avail),
-    avgExperience: withExp.length ? Math.round(withExp.reduce((n, d) => n + d.experienceYears, 0) / withExp.length) : null,
+    avgExperience: withExp.length
+      ? Math.round(withExp.reduce((n, d) => n + d.experienceYears, 0) / withExp.length)
+      : null,
     reviewCount: reviews,
     avgRating: reviews ? Math.round((weighted / reviews) * 10) / 10 : null,
   };
 }
 
 /** Rated doctors (enough reviews) by rating, then everyone else by experience. */
-function topDoctors(docs: Lite[], avail: Map<string, Availability>, limit: number, cityName: (slug: string) => string) {
+function topDoctors(
+  docs: Lite[],
+  avail: Map<string, Availability>,
+  limit: number,
+  cityName: (slug: string) => string,
+) {
   const trusted = (d: Lite) => d.reviewCount >= MIN_REVIEWS_FOR_RANK && d.rating > 0;
   return [...docs]
-    .sort((a, b) => Number(trusted(b)) - Number(trusted(a)) || (trusted(a) ? b.rating - a.rating : 0) || b.experienceYears - a.experienceYears || a.slug.localeCompare(b.slug))
+    .sort(
+      (a, b) =>
+        Number(trusted(b)) - Number(trusted(a)) ||
+        (trusted(a) ? b.rating - a.rating : 0) ||
+        b.experienceYears - a.experienceYears ||
+        a.slug.localeCompare(b.slug),
+    )
     .slice(0, limit)
     .map((d) => ({
       slug: d.slug,
@@ -156,12 +213,17 @@ const FEE_BANDS = [
 
 async function feeBands(docs: Lite[]) {
   const clinic = docs.filter(offersClinic).filter((d) => d.fee > 0);
-  const facilities = await Facilities.find({ slug: { $in: [...new Set(clinic.map((d) => d.facilitySlug).filter(Boolean))] } }, { projection: { slug: 1, category: 1 } });
+  const facilities = await Facilities.find(
+    { slug: { $in: [...new Set(clinic.map((d) => d.facilitySlug).filter(Boolean))] } },
+    { projection: { slug: 1, category: 1 } },
+  );
   const settingOf = new Map(facilities.map((f) => [f.slug, f.category ?? '']));
   return FEE_BANDS.map((band) => {
     const inBand = clinic.filter((d) => d.fee >= band.min && d.fee <= band.max);
     // "Typical setting": the most common kind of place these doctors practise at, when known.
-    const settings = [...groupBy(inBand, (d) => settingOf.get(d.facilitySlug ?? '') ?? '')].sort((a, b) => b[1].length - a[1].length);
+    const settings = [...groupBy(inBand, (d) => settingOf.get(d.facilitySlug ?? '') ?? '')].sort(
+      (a, b) => b[1].length - a[1].length,
+    );
     return { label: band.label, count: inBand.length, setting: settings[0]?.[0] ?? null };
   }).filter((b) => b.count > 0);
 }
@@ -173,7 +235,10 @@ async function compute(city: string | null, specialtySlug: string | null) {
   if (specialtySlug) filter.specialty = specialtySlug;
   const [docs, specialtyDocs] = await Promise.all([
     Doctors.find(filter, { projection: DOCTOR_FIELDS }) as unknown as Promise<Lite[]>,
-    SpecialtyModel.find({}, { slug: 1, name: 1, plural: 1, conditions: 1, whenToSee: 1, video: 1 }).lean(),
+    SpecialtyModel.find(
+      {},
+      { slug: 1, name: 1, plural: 1, conditions: 1, whenToSee: 1, video: 1 },
+    ).lean(),
   ]);
   const cityList = allCities();
   const cityName = (slug: string) => cityList.find((c) => c.slug === slug)?.name ?? slug;
@@ -210,22 +275,39 @@ async function compute(city: string | null, specialtySlug: string | null) {
         // Doctors with no known locality carry the city's name as their area: not a locality.
         .filter(([name]) => name.toLowerCase() !== cityName(city).toLowerCase())
         .map(([name, group]) => {
-          const locality = cityList.find((c) => c.slug === city)?.localities.find((l) => l.name.toLowerCase() === name.toLowerCase());
-          return { name, slug: locality?.slug ?? null, count: group.length, clinicFee: feeRange(group.filter(offersClinic), (d) => d.fee) };
+          const locality = cityList
+            .find((c) => c.slug === city)
+            ?.localities.find((l) => l.name.toLowerCase() === name.toLowerCase());
+          return {
+            name,
+            slug: locality?.slug ?? null,
+            count: group.length,
+            clinicFee: feeRange(group.filter(offersClinic), (d) => d.fee),
+          };
         })
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
     : [];
 
   const languageCounts = new Map<string, number>();
-  for (const d of docs) for (const l of new Set(d.languages ?? [])) if (l) languageCounts.set(l, (languageCounts.get(l) ?? 0) + 1);
-  const languages = [...languageCounts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  for (const d of docs)
+    for (const l of new Set(d.languages ?? []))
+      if (l) languageCounts.set(l, (languageCounts.get(l) ?? 0) + 1);
+  const languages = [...languageCounts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
 
   const clinicCities = new Set(docs.filter(offersClinic).map((d) => d.city));
   return {
     scope: {
       city: city ? { slug: city, name: cityName(city) } : null,
       specialty: specialty
-        ? { slug: specialty.slug, name: specialty.name, plural: specialty.plural, conditions: specialty.conditions ?? [], whenToSee: specialty.whenToSee ?? [] }
+        ? {
+            slug: specialty.slug,
+            name: specialty.name,
+            plural: specialty.plural,
+            conditions: specialty.conditions ?? [],
+            whenToSee: specialty.whenToSee ?? [],
+          }
         : null,
     },
     ...core(docs, avail),

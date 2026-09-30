@@ -1,14 +1,24 @@
 import { Schema, model, type InferSchemaType } from 'mongoose';
 
 const findingSchema = new Schema(
-  { name: String, value: String, unit: String, range: String, flag: { type: String, enum: ['normal', 'high', 'low'], default: 'normal' } },
+  {
+    name: String,
+    value: String,
+    unit: String,
+    range: String,
+    flag: { type: String, enum: ['normal', 'high', 'low'], default: 'normal' },
+  },
   { _id: false },
 );
 
 const recordSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    kind: { type: String, enum: ['prescription', 'lab_report', 'imaging', 'discharge', 'vaccination', 'invoice'], required: true },
+    kind: {
+      type: String,
+      enum: ['prescription', 'lab_report', 'imaging', 'discharge', 'vaccination', 'invoice'],
+      required: true,
+    },
     title: { type: String, required: true },
     doctorName: { type: String, default: '' },
     facility: { type: String, default: '' },
@@ -20,7 +30,10 @@ const recordSchema = new Schema(
     fileSize: { type: Number, default: 0 },
     mimeType: { type: String, default: 'application/pdf' },
     findings: { type: [findingSchema], default: [] },
-    medicines: { type: [{ name: String, dosage: String, duration: String, _id: false }], default: [] },
+    medicines: {
+      type: [{ name: String, dosage: String, duration: String, _id: false }],
+      default: [],
+    },
   },
   { timestamps: true, versionKey: false },
 );

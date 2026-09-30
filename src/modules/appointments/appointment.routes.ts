@@ -30,11 +30,13 @@ const bookBody = z.object({
   }),
 });
 
-const DOCTOR_FIELDS = 'slug name title clinicName area photoUrl specialty facilitySlug videoFee fee';
+const DOCTOR_FIELDS =
+  'slug name title clinicName area photoUrl specialty facilitySlug videoFee fee';
 
 /** Past confirmed appointments read as completed without a background job. */
 function statusOf(a: { status: string; startsAt: Date }) {
-  if (a.status === 'confirmed' && new Date(a.startsAt).getTime() + ROOM_CLOSES_MS < Date.now()) return 'completed';
+  if (a.status === 'confirmed' && new Date(a.startsAt).getTime() + ROOM_CLOSES_MS < Date.now())
+    return 'completed';
   return a.status;
 }
 
@@ -45,7 +47,10 @@ function roomState(a: { mode: string; startsAt: Date; status: string }) {
   const closesAt = new Date(start + ROOM_CLOSES_MS);
   // Outside production the room is always joinable so the flow can be tested any time.
   const inWindow = now >= opensAt.getTime() && now <= closesAt.getTime();
-  const canJoin = (a.mode === 'video' || a.mode === 'audio') && a.status === 'confirmed' && (inWindow || (!env.isProduction && now <= closesAt.getTime()));
+  const canJoin =
+    (a.mode === 'video' || a.mode === 'audio') &&
+    a.status === 'confirmed' &&
+    (inWindow || (!env.isProduction && now <= closesAt.getTime()));
   return { opensAt, closesAt, canJoin };
 }
 
@@ -134,7 +139,9 @@ export async function appointmentRoutes(app: FastifyInstance) {
 
   app.get('/appointments/:id', { preHandler: authenticate }, async (request) => {
     const { id } = z.object({ id: z.string().min(6).max(30) }).parse(request.params);
-    const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub)).populate('doctor', DOCTOR_FIELDS).lean();
+    const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub))
+      .populate('doctor', DOCTOR_FIELDS)
+      .lean();
     if (!appointment) throw notFound('Appointment not found');
     return { appointment: shape(appointment) };
   });
@@ -145,11 +152,20 @@ export async function appointmentRoutes(app: FastifyInstance) {
       { ...lookup(id, request.user.sub), status: 'confirmed', startsAt: { $gt: new Date() } },
       { status: 'cancelled' },
       { new: true },
-    ).populate('doctor', DOCTOR_FIELDS).lean();
+    )
+      .populate('doctor', DOCTOR_FIELDS)
+      .lean();
     if (!appointment) throw notFound('Appointment not found or already started');
 
-    await SlotModel.updateOne({ _id: appointment.slot }, { status: 'open', $unset: { heldBy: 1, holdExpiresAt: 1 } }); // back on sale
-    await MessageModel.create({ appointment: appointment._id, from: 'system', text: 'This appointment was cancelled. Any payment is refunded to the original method within 5–7 working days.' });
+    await SlotModel.updateOne(
+      { _id: appointment.slot },
+      { status: 'open', $unset: { heldBy: 1, holdExpiresAt: 1 } },
+    ); // back on sale
+    await MessageModel.create({
+      appointment: appointment._id,
+      from: 'system',
+      text: 'This appointment was cancelled. Any payment is refunded to the original method within 5–7 working days.',
+    });
     return { appointment: shape(appointment) };
   });
 
@@ -157,12 +173,21 @@ export async function appointmentRoutes(app: FastifyInstance) {
   app.patch('/appointments/:id/reschedule', { preHandler: authenticate }, async (request) => {
     const { id } = z.object({ id: z.string().min(6).max(30) }).parse(request.params);
     const { slotId } = z.object({ slotId: objectId }).parse(request.body);
-    const appointment = await AppointmentModel.findOne({ ...lookup(id, request.user.sub), status: 'confirmed', startsAt: { $gt: new Date() } });
+    const appointment = await AppointmentModel.findOne({
+      ...lookup(id, request.user.sub),
+      status: 'confirmed',
+      startsAt: { $gt: new Date() },
+    });
     if (!appointment) throw notFound('Appointment not found or already started');
     if (String(appointment.slot) === slotId) throw badRequest('Pick a different time', 'same_slot');
 
     const next = await SlotModel.findOneAndUpdate(
-      { _id: slotId, doctorSlug: appointment.doctorSlug, startsAt: { $gt: new Date() }, ...claimableBy(request.user.sub) },
+      {
+        _id: slotId,
+        doctorSlug: appointment.doctorSlug,
+        startsAt: { $gt: new Date() },
+        ...claimableBy(request.user.sub),
+      },
       { status: 'booked', $unset: { holdExpiresAt: 1, heldBy: 1 } },
       { new: true },
     );
@@ -175,47 +200,87 @@ export async function appointmentRoutes(app: FastifyInstance) {
     appointment.mode = next.mode === 'video' && appointment.mode === 'audio' ? 'audio' : next.mode;
     appointment.amount = next.fee;
     await appointment.save();
-    await SlotModel.updateOne({ _id: previousSlot }, { status: 'open', $unset: { heldBy: 1, holdExpiresAt: 1 } });
-    await MessageModel.create({ appointment: appointment._id, from: 'system', text: `Rescheduled to ${next.startsAt.toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}.` });
+    await SlotModel.updateOne(
+      { _id: previousSlot },
+      { status: 'open', $unset: { heldBy: 1, holdExpiresAt: 1 } },
+    );
+    await MessageModel.create({
+      appointment: appointment._id,
+      from: 'system',
+      text: `Rescheduled to ${next.startsAt.toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}.`,
+    });
 
-    const populated = await AppointmentModel.findById(appointment._id).populate('doctor', DOCTOR_FIELDS).lean();
+    const populated = await AppointmentModel.findById(appointment._id)
+      .populate('doctor', DOCTOR_FIELDS)
+      .lean();
     return { appointment: shape(populated!) };
   });
 
   // ---- Consultation chat ----
   app.get('/appointments/:id/messages', { preHandler: authenticate }, async (request) => {
     const { id } = z.object({ id: z.string().min(6).max(30) }).parse(request.params);
-    const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub), { _id: 1 }).lean();
+    const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub), {
+      _id: 1,
+    }).lean();
     if (!appointment) throw notFound('Appointment not found');
-    const messages = await MessageModel.find({ appointment: appointment._id }).sort({ createdAt: 1 }).limit(200).lean();
+    const messages = await MessageModel.find({ appointment: appointment._id })
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .lean();
     return { messages: messages.map((m) => toDto(m, true)) };
   });
 
-  app.post('/appointments/:id/messages', { preHandler: authenticate, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const { id } = z.object({ id: z.string().min(6).max(30) }).parse(request.params);
-    const body = z.object({
-      text: z.string().trim().min(1).max(2000),
-      attachment: z.object({ name: z.string().max(200), size: z.number().int().max(10 * 1024 * 1024) }).optional(),
-    }).parse(request.body);
-    const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub)).populate('doctor', 'name').lean();
-    if (!appointment) throw notFound('Appointment not found');
-    if (appointment.status === 'cancelled') throw badRequest('This appointment was cancelled', 'cancelled');
+  app.post(
+    '/appointments/:id/messages',
+    { preHandler: authenticate, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.string().min(6).max(30) }).parse(request.params);
+      const body = z
+        .object({
+          text: z.string().trim().min(1).max(2000),
+          attachment: z
+            .object({
+              name: z.string().max(200),
+              size: z
+                .number()
+                .int()
+                .max(10 * 1024 * 1024),
+            })
+            .optional(),
+        })
+        .parse(request.body);
+      const appointment = await AppointmentModel.findOne(lookup(id, request.user.sub))
+        .populate('doctor', 'name')
+        .lean();
+      if (!appointment) throw notFound('Appointment not found');
+      if (appointment.status === 'cancelled')
+        throw badRequest('This appointment was cancelled', 'cancelled');
 
-    const message = await MessageModel.create({ appointment: appointment._id, from: 'patient', text: body.text, attachment: body.attachment });
+      const message = await MessageModel.create({
+        appointment: appointment._id,
+        from: 'patient',
+        text: body.text,
+        attachment: body.attachment,
+      });
 
-    // Until the doctor app exists, the first patient message gets the clinic's standard acknowledgement.
-    const doctorReplied = await MessageModel.exists({ appointment: appointment._id, from: 'doctor' });
-    const replies = [];
-    if (!doctorReplied) {
-      const doctorName = (appointment.doctor as { name?: string } | null)?.name ?? 'Your doctor';
-      replies.push(await MessageModel.create({
+      // Until the doctor app exists, the first patient message gets the clinic's standard acknowledgement.
+      const doctorReplied = await MessageModel.exists({
         appointment: appointment._id,
         from: 'doctor',
-        text: `Thanks for sharing — ${doctorName} will review this before your ${appointment.mode === 'clinic' ? 'visit' : 'call'}. If symptoms get worse suddenly, call 108.`,
-      }));
-    }
-    reply.code(201);
-    return { messages: [message, ...replies].map((m) => toDto(m.toObject(), true)) };
-  });
+      });
+      const replies = [];
+      if (!doctorReplied) {
+        const doctorName = (appointment.doctor as { name?: string } | null)?.name ?? 'Your doctor';
+        replies.push(
+          await MessageModel.create({
+            appointment: appointment._id,
+            from: 'doctor',
+            text: `Thanks for sharing — ${doctorName} will review this before your ${appointment.mode === 'clinic' ? 'visit' : 'call'}. If symptoms get worse suddenly, call 108.`,
+          }),
+        );
+      }
+      reply.code(201);
+      return { messages: [message, ...replies].map((m) => toDto(m.toObject(), true)) };
+    },
+  );
 }
-

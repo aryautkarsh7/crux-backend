@@ -5,19 +5,41 @@
  */
 import { Types } from 'mongoose';
 import { env } from '../../config/env.js';
-import { currentMappingContext, directoryEnabled, doctarSource, liveDirectory } from './directory.js';
-import { DOCTOR_DETAIL_FIELDS, HOSPITAL_DETAIL_FIELDS, SCHEDULE_FIELDS, mapDoctor, mapHospital, type DoctarDoctor, type DoctarHospital, type DoctarSchedule } from './mapping.js';
+import {
+  currentMappingContext,
+  directoryEnabled,
+  doctarSource,
+  liveDirectory,
+} from './directory.js';
+import {
+  DOCTOR_DETAIL_FIELDS,
+  HOSPITAL_DETAIL_FIELDS,
+  SCHEDULE_FIELDS,
+  mapDoctor,
+  mapHospital,
+  type DoctarDoctor,
+  type DoctarHospital,
+  type DoctarSchedule,
+} from './mapping.js';
 
 type Doc = Record<string, any> & { _id: any };
 /** Longest a page waits for Doctar before rendering from the index. */
 const WAIT_MS = 3000;
 const cache = new Map<string, { at: number; value: Doc | null; pending?: Promise<Doc | null> }>();
 
-const withTimeout = <T,>(promise: Promise<T>, ms: number) =>
-  Promise.race([promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Doctar read timed out')), ms).unref())]);
+const withTimeout = <T>(promise: Promise<T>, ms: number) =>
+  Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Doctar read timed out')), ms).unref(),
+    ),
+  ]);
 
 /** Cached read with stale-while-revalidate: fresh → cache; stale → cache now, refresh behind; missing → wait (bounded). */
-async function cached(key: string, read: () => Promise<Doc | null>): Promise<Doc | null | undefined> {
+async function cached(
+  key: string,
+  read: () => Promise<Doc | null>,
+): Promise<Doc | null | undefined> {
   const hit = cache.get(key);
   const fresh = hit && Date.now() - hit.at < env.DOCTAR_DETAIL_TTL_SECONDS * 1000;
   if (hit && fresh) return hit.value;
@@ -47,7 +69,18 @@ async function cached(key: string, read: () => Promise<Doc | null>): Promise<Doc
 }
 
 /** Fields Curxx decides (overlay, URL, hospital link) always come from the index entry. */
-const KEEP_DOCTOR = ['slug', 'facilitySlug', 'clinicName', 'area', 'rank', 'rankScore', 'featured', 'bookable', 'phone', 'whatsapp'] as const;
+const KEEP_DOCTOR = [
+  'slug',
+  'facilitySlug',
+  'clinicName',
+  'area',
+  'rank',
+  'rankScore',
+  'featured',
+  'bookable',
+  'phone',
+  'whatsapp',
+] as const;
 
 /** A Doctar doctor from the index, refreshed from Doctar (profile page). Other records pass through. */
 export async function doctorDetail(doc: Doc): Promise<Doc> {
@@ -56,11 +89,25 @@ export async function doctorDetail(doc: Doc): Promise<Doc> {
   const id = String(doc.doctarId);
   const fresh = await cached(`doctor:${id}`, async () => {
     if (!Types.ObjectId.isValid(id)) return null;
-    const [d] = await src.find('doctors', { _id: new Types.ObjectId(id) }, { projection: DOCTOR_DETAIL_FIELDS, limit: 1 });
+    const [d] = await src.find(
+      'doctors',
+      { _id: new Types.ObjectId(id) },
+      { projection: DOCTOR_DETAIL_FIELDS, limit: 1 },
+    );
     if (!d) return null;
-    const schedules = (await src.find('doctorschedules', { doctor: d._id }, { projection: SCHEDULE_FIELDS })) as unknown as DoctarSchedule[];
+    const schedules = (await src.find(
+      'doctorschedules',
+      { doctor: d._id },
+      { projection: SCHEDULE_FIELDS },
+    )) as unknown as DoctarSchedule[];
     const facilities = liveDirectory().facilityByDoctarId;
-    const mapped = mapDoctor(d as DoctarDoctor, schedules, (hid) => facilities.get(hid), await currentMappingContext(), true);
+    const mapped = mapDoctor(
+      d as DoctarDoctor,
+      schedules,
+      (hid) => facilities.get(hid),
+      await currentMappingContext(),
+      true,
+    );
     return 'doc' in mapped ? mapped.doc : null;
   }).catch(() => undefined);
   if (!fresh) return doc;
@@ -77,13 +124,26 @@ export async function facilityDetail(doc: Doc): Promise<Doc> {
   const id = String(doc.doctarId);
   const fresh = await cached(`facility:${id}`, async () => {
     if (!Types.ObjectId.isValid(id)) return null;
-    const [h] = await src.find('hospitals', { _id: new Types.ObjectId(id) }, { projection: HOSPITAL_DETAIL_FIELDS, limit: 1 });
+    const [h] = await src.find(
+      'hospitals',
+      { _id: new Types.ObjectId(id) },
+      { projection: HOSPITAL_DETAIL_FIELDS, limit: 1 },
+    );
     if (!h) return null;
     const mapped = mapHospital(h as DoctarHospital, await currentMappingContext(), true);
     return 'doc' in mapped ? mapped.doc : null;
   }).catch(() => undefined);
   if (!fresh) return doc;
-  return { ...fresh, _id: doc._id, slug: doc.slug, specialties: doc.specialties, rank: doc.rank, rankScore: doc.rankScore, featured: doc.featured, phone: doc.phone || fresh.phone };
+  return {
+    ...fresh,
+    _id: doc._id,
+    slug: doc.slug,
+    specialties: doc.specialties,
+    rank: doc.rank,
+    rankScore: doc.rankScore,
+    featured: doc.featured,
+    phone: doc.phone || fresh.phone,
+  };
 }
 
 export const clearDetailCache = () => cache.clear();

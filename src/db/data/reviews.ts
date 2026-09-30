@@ -1,7 +1,28 @@
 /** Patient reviews generated per doctor from specialty-appropriate templates. */
 import { SPECIALTY_BY_SLUG } from './specialties.js';
 
-const AUTHORS = ['Karthik S.', 'Priyanka R.', 'Anil M.', 'Sneha K.', 'Rohit V.', 'Divya P.', 'Manoj B.', 'Aarti J.', 'Suresh N.', 'Meghana T.', 'Farhan A.', 'Lakshmi G.', 'Vinay H.', 'Neha D.', 'Ramesh C.', 'Pallavi S.', 'Abhishek T.', 'Kavitha M.', 'Imran K.', 'Swati L.'];
+const AUTHORS = [
+  'Karthik S.',
+  'Priyanka R.',
+  'Anil M.',
+  'Sneha K.',
+  'Rohit V.',
+  'Divya P.',
+  'Manoj B.',
+  'Aarti J.',
+  'Suresh N.',
+  'Meghana T.',
+  'Farhan A.',
+  'Lakshmi G.',
+  'Vinay H.',
+  'Neha D.',
+  'Ramesh C.',
+  'Pallavi S.',
+  'Abhishek T.',
+  'Kavitha M.',
+  'Imran K.',
+  'Swati L.',
+];
 
 const GENERAL = [
   'Explained everything patiently and did not rush the consultation. The e-prescription arrived before I left the clinic.',
@@ -12,18 +33,66 @@ const GENERAL = [
 ];
 
 const BY_SPECIALTY: Record<string, string[]> = {
-  dermatologist: ['My acne finally cleared after years of trying random creams. The routine was simple and it worked in 8 weeks.', 'Pigmentation has visibly reduced. Doctor was realistic about timelines, which I appreciated.', 'Diagnosed a fungal infection two other doctors had missed. Cleared up within three weeks.'],
-  'general-physician': ['Sorted out my recurring fever with the right tests instead of a blanket antibiotic.', 'Adjusted my BP and sugar medicines carefully and explained the side effects clearly.', 'Great family doctor — my parents are comfortable with her too.'],
-  cardiologist: ['Reviewed my ECG and echo in detail and explained my blood pressure readings properly.', 'After my stent, the follow-up plan was very clear. I feel much more confident now.', 'Took my chest pain seriously and got the TMT done the same day.'],
-  pediatrician: ['Wonderful with my toddler — calm, gentle and very reassuring for first-time parents.', 'Vaccination schedule was explained clearly and the clinic sends reminders.', 'Didn’t overprescribe for my son’s cold. Just the right advice.'],
-  gynecologist: ['Supportive throughout my pregnancy and always answered my questions patiently.', 'Finally got a clear plan for my PCOS that looked at more than just weight.', 'Very respectful and made me comfortable discussing everything.'],
-  orthopedist: ['My knee pain improved a lot with the physio plan instead of jumping to surgery.', 'Reviewed my MRI thoroughly and explained the options without pressure.', 'Back pain that bothered me for months is finally under control.'],
-  psychiatrist: ['Felt heard for the first time. The therapy plan and medicines are really helping my anxiety.', 'Non-judgemental and practical. Sleep has improved within a few weeks.', 'Explained the medication timeline honestly, including side effects.'],
-  'ent-specialist': ['Sinus problems I had for years were finally explained and treated properly.', 'Quick hearing test and a clear diagnosis. Very professional.', 'Vertigo episodes have stopped after the exercises and medicine.'],
-  gastroenterologist: ['Acidity that had me reaching for antacids daily is now under control.', 'Explained my IBS triggers and gave a diet plan that actually works.', 'Thorough review of my liver reports with clear next steps.'],
-  neurologist: ['My migraines went from weekly to once a month on the new plan.', 'Very detailed neurological exam and a clear explanation of my MRI.', 'Calm and patient with my father after his stroke — the rehab plan was excellent.'],
-  ophthalmologist: ['Detailed eye exam and new glasses prescription — much clearer vision now.', 'Dry eye treatment worked quickly. Great advice about screen breaks.', 'Diabetic retinal screening was quick and well explained.'],
-  dentist: ['Painless root canal — I was very nervous but it was completely fine.', 'Gentle cleaning and honest advice. No upselling of treatments.', 'Braces consultation was detailed with a clear cost and timeline.'],
+  dermatologist: [
+    'My acne finally cleared after years of trying random creams. The routine was simple and it worked in 8 weeks.',
+    'Pigmentation has visibly reduced. Doctor was realistic about timelines, which I appreciated.',
+    'Diagnosed a fungal infection two other doctors had missed. Cleared up within three weeks.',
+  ],
+  'general-physician': [
+    'Sorted out my recurring fever with the right tests instead of a blanket antibiotic.',
+    'Adjusted my BP and sugar medicines carefully and explained the side effects clearly.',
+    'Great family doctor — my parents are comfortable with her too.',
+  ],
+  cardiologist: [
+    'Reviewed my ECG and echo in detail and explained my blood pressure readings properly.',
+    'After my stent, the follow-up plan was very clear. I feel much more confident now.',
+    'Took my chest pain seriously and got the TMT done the same day.',
+  ],
+  pediatrician: [
+    'Wonderful with my toddler — calm, gentle and very reassuring for first-time parents.',
+    'Vaccination schedule was explained clearly and the clinic sends reminders.',
+    'Didn’t overprescribe for my son’s cold. Just the right advice.',
+  ],
+  gynecologist: [
+    'Supportive throughout my pregnancy and always answered my questions patiently.',
+    'Finally got a clear plan for my PCOS that looked at more than just weight.',
+    'Very respectful and made me comfortable discussing everything.',
+  ],
+  orthopedist: [
+    'My knee pain improved a lot with the physio plan instead of jumping to surgery.',
+    'Reviewed my MRI thoroughly and explained the options without pressure.',
+    'Back pain that bothered me for months is finally under control.',
+  ],
+  psychiatrist: [
+    'Felt heard for the first time. The therapy plan and medicines are really helping my anxiety.',
+    'Non-judgemental and practical. Sleep has improved within a few weeks.',
+    'Explained the medication timeline honestly, including side effects.',
+  ],
+  'ent-specialist': [
+    'Sinus problems I had for years were finally explained and treated properly.',
+    'Quick hearing test and a clear diagnosis. Very professional.',
+    'Vertigo episodes have stopped after the exercises and medicine.',
+  ],
+  gastroenterologist: [
+    'Acidity that had me reaching for antacids daily is now under control.',
+    'Explained my IBS triggers and gave a diet plan that actually works.',
+    'Thorough review of my liver reports with clear next steps.',
+  ],
+  neurologist: [
+    'My migraines went from weekly to once a month on the new plan.',
+    'Very detailed neurological exam and a clear explanation of my MRI.',
+    'Calm and patient with my father after his stroke — the rehab plan was excellent.',
+  ],
+  ophthalmologist: [
+    'Detailed eye exam and new glasses prescription — much clearer vision now.',
+    'Dry eye treatment worked quickly. Great advice about screen breaks.',
+    'Diabetic retinal screening was quick and well explained.',
+  ],
+  dentist: [
+    'Painless root canal — I was very nervous but it was completely fine.',
+    'Gentle cleaning and honest advice. No upselling of treatments.',
+    'Braces consultation was detailed with a clear cost and timeline.',
+  ],
 };
 
 const VISITED_FOR: Record<string, string[]> = {
@@ -41,7 +110,14 @@ const VISITED_FOR: Record<string, string[]> = {
   dentist: ['Tooth pain', 'Cleaning', 'Braces'],
 };
 
-const TAGS = ['Explains clearly', 'On time', 'Friendly', 'Thorough', 'Good follow-up', 'Value for money'];
+const TAGS = [
+  'Explains clearly',
+  'On time',
+  'Friendly',
+  'Thorough',
+  'Good follow-up',
+  'Value for money',
+];
 
 function rng(seed: number) {
   let state = seed >>> 0;
@@ -66,14 +142,19 @@ function specialtyLines(specialty: string) {
 }
 
 function visitedFor(specialty: string) {
-  return VISITED_FOR[specialty] ?? SPECIALTY_BY_SLUG.get(specialty)?.conditions.slice(0, 4).map((c) => c.split(/[,(]/)[0]!.trim()) ?? ['Consultation'];
+  return (
+    VISITED_FOR[specialty] ??
+    SPECIALTY_BY_SLUG.get(specialty)
+      ?.conditions.slice(0, 4)
+      .map((c) => c.split(/[,(]/)[0]!.trim()) ?? ['Consultation']
+  );
 }
 
 export function generateReviews(doctors: { slug: string; specialty: string }[]) {
   const now = Date.now();
   return doctors.flatMap((doctor) => {
     const random = rng(hashString(doctor.slug));
-    const pick = <T,>(xs: readonly T[]) => xs[Math.floor(random() * xs.length)]!;
+    const pick = <T>(xs: readonly T[]) => xs[Math.floor(random() * xs.length)]!;
     const pool = [...specialtyLines(doctor.specialty), ...GENERAL];
     const count = 6 + Math.floor(random() * 9);
     return Array.from({ length: count }, (_, i) => {

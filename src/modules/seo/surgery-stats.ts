@@ -9,7 +9,14 @@ import { directoryVersion } from '../doctar/directory.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
 /** Specialties counted as surgeons: the six in the template's surgeon table, plus any "…-surgeon". */
-const SURGEON_TABLE = ['general-surgeon', 'orthopedist', 'urologist', 'gynecologist', 'ent-specialist', 'ophthalmologist'];
+const SURGEON_TABLE = [
+  'general-surgeon',
+  'orthopedist',
+  'urologist',
+  'gynecologist',
+  'ent-specialist',
+  'ophthalmologist',
+];
 const isSurgical = (slug: string) => SURGEON_TABLE.includes(slug) || slug.endsWith('-surgeon');
 const CACHE_MS = 10 * 60 * 1000;
 
@@ -29,7 +36,12 @@ function stayKind(stay: string) {
   return 'longer';
 }
 
-const normalise = (name: string) => name.toLowerCase().replace(/\([^)]*\)/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const normalise = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 async function compute(city: string | null) {
   const cityInfo = city ? allCities().find((c) => c.slug === city) : null;
@@ -37,16 +49,32 @@ async function compute(city: string | null) {
   const costed = allSurgeries().filter((s) => (s.cost?.[1] ?? 0) > 0);
   const procedures = costed.map((s) => {
     // India pages quote the widest range: the tier-2 low end to the metro high end.
-    const [low, high] = city ? tierCost(s.cost, tier) : [tierCost(s.cost, 2)[0], tierCost(s.cost, 1)[1]];
-    return { slug: s.slug, name: s.name, category: s.category, stay: s.stay ?? '', low, high, kind: stayKind(s.stay ?? '') };
+    const [low, high] = city
+      ? tierCost(s.cost, tier)
+      : [tierCost(s.cost, 2)[0], tierCost(s.cost, 1)[1]];
+    return {
+      slug: s.slug,
+      name: s.name,
+      category: s.category,
+      stay: s.stay ?? '',
+      low,
+      high,
+      kind: stayKind(s.stay ?? ''),
+    };
   });
   const byLow = [...procedures].sort((a, b) => a.low - b.low);
   const byHigh = [...procedures].sort((a, b) => b.high - a.high);
   const daycare = procedures.filter((p) => p.kind === 'daycare');
   const bands = [
     { label: 'under ₹50,000', count: procedures.filter((p) => p.low < 50_000).length },
-    { label: 'between ₹50,000 and ₹99,999', count: procedures.filter((p) => p.low >= 50_000 && p.low < 100_000).length },
-    { label: 'between ₹1,00,000 and ₹1,99,999', count: procedures.filter((p) => p.low >= 100_000 && p.low < 200_000).length },
+    {
+      label: 'between ₹50,000 and ₹99,999',
+      count: procedures.filter((p) => p.low >= 50_000 && p.low < 100_000).length,
+    },
+    {
+      label: 'between ₹1,00,000 and ₹1,99,999',
+      count: procedures.filter((p) => p.low >= 100_000 && p.low < 200_000).length,
+    },
     { label: 'at ₹2,00,000 or more', count: procedures.filter((p) => p.low >= 200_000).length },
   ].filter((b) => b.count > 0);
 
@@ -55,21 +83,45 @@ async function compute(city: string | null) {
   const surgeonFilter: Record<string, unknown> = {};
   if (city) surgeonFilter.city = city;
   const [hospitals, doctors] = await Promise.all([
-    Facilities.find(hospitalFilter, { projection: { slug: 1, name: 1, city: 1, area: 1, rating: 1, rankScore: 1, nabh: 1, beds: 1, departments: 1 }, sort: { rankScore: -1, rating: -1, slug: 1 } }),
-    Doctors.find(surgeonFilter, { projection: { specialty: 1, city: 1, facilitySlug: 1, experienceYears: 1 } }),
+    Facilities.find(hospitalFilter, {
+      projection: {
+        slug: 1,
+        name: 1,
+        city: 1,
+        area: 1,
+        rating: 1,
+        rankScore: 1,
+        nabh: 1,
+        beds: 1,
+        departments: 1,
+      },
+      sort: { rankScore: -1, rating: -1, slug: 1 },
+    }),
+    Doctors.find(surgeonFilter, {
+      projection: { specialty: 1, city: 1, facilitySlug: 1, experienceYears: 1 },
+    }),
   ]);
   const surgeons = doctors.filter((d) => isSurgical(d.specialty));
   const surgeonsAt = new Map<string, number>();
-  for (const d of surgeons) if (d.facilitySlug) surgeonsAt.set(d.facilitySlug, (surgeonsAt.get(d.facilitySlug) ?? 0) + 1);
+  for (const d of surgeons)
+    if (d.facilitySlug) surgeonsAt.set(d.facilitySlug, (surgeonsAt.get(d.facilitySlug) ?? 0) + 1);
 
   const areaCounts = new Map<string, number>();
   for (const h of hospitals) if (h.area) areaCounts.set(h.area, (areaCounts.get(h.area) ?? 0) + 1);
-  const areas = [...areaCounts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const areas = [...areaCounts]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
   const surgeonTable = SURGEON_TABLE.map((slug) => {
     const group = surgeons.filter((d) => d.specialty === slug);
     const withExp = group.filter((d) => d.experienceYears > 0);
-    return { slug, count: group.length, avgExperience: withExp.length ? Math.round(withExp.reduce((n, d) => n + d.experienceYears, 0) / withExp.length) : null };
+    return {
+      slug,
+      count: group.length,
+      avgExperience: withExp.length
+        ? Math.round(withExp.reduce((n, d) => n + d.experienceYears, 0) / withExp.length)
+        : null,
+    };
   }).filter((r) => r.count > 0);
 
   // Procedures from the complete list with no cost data yet (matched loosely by name).
@@ -78,7 +130,9 @@ async function compute(city: string | null) {
     category: g.category,
     procedures: g.procedures.filter((name) => {
       const n = normalise(name);
-      return !known.some((k) => k === n || (k.length > 5 && n.startsWith(k)) || (n.length > 5 && k.startsWith(n)));
+      return !known.some(
+        (k) => k === n || (k.length > 5 && n.startsWith(k)) || (n.length > 5 && k.startsWith(n)),
+      );
     }),
   })).filter((g) => g.procedures.length);
 
@@ -92,7 +146,10 @@ async function compute(city: string | null) {
           surgeons: surgeons.filter((d) => d.city === c.slug).length,
         }))
         .filter((c) => c.hospitals > 0 || c.surgeons > 0)
-        .sort((a, b) => b.hospitals - a.hospitals || b.surgeons - a.surgeons || a.name.localeCompare(b.name));
+        .sort(
+          (a, b) =>
+            b.hospitals - a.hospitals || b.surgeons - a.surgeons || a.name.localeCompare(b.name),
+        );
 
   return {
     city: cityInfo ? { slug: cityInfo.slug, name: cityInfo.name } : null,

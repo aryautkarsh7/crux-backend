@@ -57,8 +57,14 @@ const PINCODES: Record<string, { area: string; lat: number; lng: number }> = {
 /** Where distances are measured from when we don't know the patient's pincode. */
 export const DEFAULT_PINCODE = '560038';
 
-export type Place = { pincode: string; area: string; lat: number; lng: number; approximate: boolean; city: string };
-
+export type Place = {
+  pincode: string;
+  area: string;
+  lat: number;
+  lng: number;
+  approximate: boolean;
+  city: string;
+};
 
 /**
  * Resolves a pincode in any city we serve to a point. Known locality pincodes are exact; other
@@ -69,9 +75,19 @@ export function locate(pincode: string): Place | null {
   const legacy = PINCODES[pincode];
   if (legacy) return { pincode, ...legacy, approximate: false, city: 'bangalore' };
   const known = localityByPin(pincode);
-  if (known) return { pincode, area: known.area, lat: known.lat, lng: known.lng, approximate: false, city: known.city };
+  if (known)
+    return {
+      pincode,
+      area: known.area,
+      lat: known.lat,
+      lng: known.lng,
+      approximate: false,
+      city: known.city,
+    };
   const city = cities().find((c) => c.pincodePrefixes.some((p) => pincode.startsWith(p)));
-  return city ? { pincode, area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug } : null;
+  return city
+    ? { pincode, area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug }
+    : null;
 }
 
 /** The default "near you" point for a city: its first listed locality. */
@@ -79,8 +95,23 @@ export function cityOrigin(citySlug: string): Place {
   const city = cities().find((c) => c.slug === citySlug) ?? cities()[0]!;
   const l = city.localities[0];
   // A city added in the admin panel may not have localities yet: measure from its centre.
-  if (!l) return { pincode: '', area: city.name, lat: city.lat, lng: city.lng, approximate: true, city: city.slug };
-  return { pincode: l.pincode, area: l.name, lat: l.lat, lng: l.lng, approximate: false, city: city.slug };
+  if (!l)
+    return {
+      pincode: '',
+      area: city.name,
+      lat: city.lat,
+      lng: city.lng,
+      approximate: true,
+      city: city.slug,
+    };
+  return {
+    pincode: l.pincode,
+    area: l.name,
+    lat: l.lat,
+    lng: l.lng,
+    approximate: false,
+    city: city.slug,
+  };
 }
 
 /** Great-circle distance in km, rounded to 0.1. */
@@ -88,6 +119,7 @@ export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; ln
   const rad = (d: number) => (d * Math.PI) / 180;
   const dLat = rad(b.lat - a.lat);
   const dLng = rad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return Math.round(6371 * 2 * Math.asin(Math.sqrt(h)) * 10) / 10;
 }

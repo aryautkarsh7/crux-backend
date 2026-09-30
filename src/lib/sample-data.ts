@@ -17,14 +17,25 @@ const scope = new AsyncLocalStorage<true>();
  * Runs `fn` (and everything it awaits) with sample data visible, e.g. for the admin panel. Awaits inside
  * the scope because a Mongoose query only runs once it's awaited.
  */
-export const withSampleData = <R>(fn: () => R): Promise<Awaited<R>> => scope.run(true, async (): Promise<Awaited<R>> => await fn());
+export const withSampleData = <R>(fn: () => R): Promise<Awaited<R>> =>
+  scope.run(true, async (): Promise<Awaited<R>> => await fn());
 
 /** True when queries made right now leave sample records out. */
 export const sampleHidden = () => !env.SHOW_SAMPLE_DATA && !scope.getStore();
 
 const QUERY_OPS = [
-  'find', 'findOne', 'countDocuments', 'distinct', 'findOneAndUpdate', 'updateOne', 'updateMany',
-  'findOneAndDelete', 'deleteOne', 'deleteMany', 'replaceOne', 'findOneAndReplace',
+  'find',
+  'findOne',
+  'countDocuments',
+  'distinct',
+  'findOneAndUpdate',
+  'updateOne',
+  'updateMany',
+  'findOneAndDelete',
+  'deleteOne',
+  'deleteMany',
+  'replaceOne',
+  'findOneAndReplace',
 ] as const;
 
 /**
@@ -34,9 +45,13 @@ const QUERY_OPS = [
  */
 export function hideSampleData(schema: Schema, real: () => Record<string, unknown>) {
   const visible = () => ({ sample: { $ne: true }, ...real() });
-  schema.pre([...QUERY_OPS], { document: false, query: true }, function (this: Query<unknown, unknown>) {
-    if (sampleHidden()) this.and([visible()]);
-  });
+  schema.pre(
+    [...QUERY_OPS],
+    { document: false, query: true },
+    function (this: Query<unknown, unknown>) {
+      if (sampleHidden()) this.and([visible()]);
+    },
+  );
   schema.pre('aggregate', function (this: Aggregate<unknown>) {
     if (!sampleHidden()) return;
     const pipeline = this.pipeline();
@@ -46,4 +61,6 @@ export function hideSampleData(schema: Schema, real: () => Record<string, unknow
 }
 
 /** Admin-added or imported: the rule for doctors and facilities. */
-export const addedOrImported = () => ({ $or: [{ managed: true }, { source: { $nin: [null, ''] } }] });
+export const addedOrImported = () => ({
+  $or: [{ managed: true }, { source: { $nin: [null, ''] } }],
+});

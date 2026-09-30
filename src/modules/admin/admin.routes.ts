@@ -13,7 +13,12 @@ import { HttpError, badRequest, conflict, notFound, unauthorized } from '../../l
 import { escapeRegex } from '../../lib/http.js';
 import { withSampleData } from '../../lib/sample-data.js';
 import { embedFor } from '../activity/activity.routes.js';
-import { InteractionModel, LoginEventModel, ReportModel, VideoModel } from '../../models/activity.model.js';
+import {
+  InteractionModel,
+  LoginEventModel,
+  ReportModel,
+  VideoModel,
+} from '../../models/activity.model.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
 import { CityModel, ConditionModel, SurgeryModel } from '../../models/catalogue.model.js';
 import { ArticleModel } from '../../models/article.model.js';
@@ -25,7 +30,12 @@ import { LeadModel } from '../../models/lead.model.js';
 import { MedicineCategoryModel, MedicineModel } from '../../models/medicine.model.js';
 import { OrderModel } from '../../models/order.model.js';
 import { ReviewModel } from '../../models/review.model.js';
-import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../../models/site.model.js';
+import {
+  ContentModel,
+  PlanModel,
+  SiteSettingModel,
+  TestimonialModel,
+} from '../../models/site.model.js';
 import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { UserModel } from '../../models/user.model.js';
@@ -61,17 +71,34 @@ type Resource = {
   after?: (doc: Doc, action: 'create' | 'update' | 'delete') => Promise<void>;
 };
 
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80);
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 80);
 
-const DEFAULT_SCHEDULE: Schedule = { days: [1, 2, 3, 4, 5, 6], sessions: [{ start: '10:00', end: '13:30' }, { start: '17:00', end: '20:30' }], step: 30, video: 'mixed' };
+const DEFAULT_SCHEDULE: Schedule = {
+  days: [1, 2, 3, 4, 5, 6],
+  sessions: [
+    { start: '10:00', end: '13:30' },
+    { start: '17:00', end: '20:30' },
+  ],
+  step: 30,
+  video: 'mixed',
+};
 
 async function prepareDoctor(body: Doc, existing: Doc | null) {
   const next = { ...body };
   // Clinic name, area and city follow the facility the doctor is attached to.
   const facilitySlug = next.facilitySlug ?? existing?.facilitySlug;
   if (next.facilitySlug !== undefined && facilitySlug) {
-    const facility = await FacilityModel.findOne({ slug: facilitySlug }, { name: 1, area: 1, city: 1 }).lean();
-    if (!facility) throw badRequest(`No hospital or clinic with slug "${facilitySlug}"`, 'unknown_facility');
+    const facility = await FacilityModel.findOne(
+      { slug: facilitySlug },
+      { name: 1, area: 1, city: 1 },
+    ).lean();
+    if (!facility)
+      throw badRequest(`No hospital or clinic with slug "${facilitySlug}"`, 'unknown_facility');
     next.clinicName ??= facility.name;
     next.area ??= facility.area;
     next.city ??= facility.city;
@@ -91,189 +118,415 @@ async function prepareDoctor(body: Doc, existing: Doc | null) {
 }
 
 /** First URL segments the website already uses: a city can't take one of these slugs. */
-const RESERVED_CITY_SLUGS = new Set(['account', 'blog', 'book', 'cart', 'checkout', 'clinic', 'consult', 'curxx-plus', 'doctor', 'doctors', 'for-providers', 'lab', 'lab-tests', 'labs', 'login', 'medicines', 'orders', 'partner-with-us', 'privacy', 'records', 'register', 'specialties', 'surgeries', 'clinics', 'hospitals', 'teleconsultation-policy', 'terms', 'triage', 'api']);
+const RESERVED_CITY_SLUGS = new Set([
+  'account',
+  'blog',
+  'book',
+  'cart',
+  'checkout',
+  'clinic',
+  'consult',
+  'curxx-plus',
+  'doctor',
+  'doctors',
+  'for-providers',
+  'lab',
+  'lab-tests',
+  'labs',
+  'login',
+  'medicines',
+  'orders',
+  'partner-with-us',
+  'privacy',
+  'records',
+  'register',
+  'specialties',
+  'surgeries',
+  'clinics',
+  'hospitals',
+  'teleconsultation-policy',
+  'terms',
+  'triage',
+  'api',
+]);
 
 async function prepareCity(body: Doc, existing: Doc | null) {
   const slug = existing?.slug ?? body.slug;
-  if (!existing && RESERVED_CITY_SLUGS.has(slug)) throw badRequest(`"${slug}" is already a page on the website; pick another slug`, 'reserved_slug');
+  if (!existing && RESERVED_CITY_SLUGS.has(slug))
+    throw badRequest(
+      `"${slug}" is already a page on the website; pick another slug`,
+      'reserved_slug',
+    );
   if (body.aliases) {
-    body.aliases = [...new Set((body.aliases as string[]).map((a) => slugify(String(a))).filter((a) => a && a !== slug))];
-    const taken = cities().find((c) => c.slug !== slug && (body.aliases.includes(c.slug) || c.aliases.some((a) => body.aliases.includes(a))));
+    body.aliases = [
+      ...new Set(
+        (body.aliases as string[]).map((a) => slugify(String(a))).filter((a) => a && a !== slug),
+      ),
+    ];
+    const taken = cities().find(
+      (c) =>
+        c.slug !== slug &&
+        (body.aliases.includes(c.slug) || c.aliases.some((a) => body.aliases.includes(a))),
+    );
     if (taken) throw badRequest(`An alias is already used by ${taken.name}`, 'duplicate_alias');
   }
   if (body.localities) {
-    if (!Array.isArray(body.localities)) throw badRequest('localities: send a list', 'invalid_record');
-    body.localities = (body.localities as Doc[]).map((l) => ({ ...l, slug: slugify(String(l.slug || l.name || '')), lat: l.lat ?? body.lat ?? existing?.lat, lng: l.lng ?? body.lng ?? existing?.lng }));
-    if (body.localities.some((l: Doc) => !l.slug || !l.name)) throw badRequest('localities: every locality needs a name', 'invalid_record');
+    if (!Array.isArray(body.localities))
+      throw badRequest('localities: send a list', 'invalid_record');
+    body.localities = (body.localities as Doc[]).map((l) => ({
+      ...l,
+      slug: slugify(String(l.slug || l.name || '')),
+      lat: l.lat ?? body.lat ?? existing?.lat,
+      lng: l.lng ?? body.lng ?? existing?.lng,
+    }));
+    if (body.localities.some((l: Doc) => !l.slug || !l.name))
+      throw badRequest('localities: every locality needs a name', 'invalid_record');
   }
   return body;
 }
 
 /** Conditions and surgeries point at a specialty; make sure it exists. */
 async function checkSpecialty(body: Doc) {
-  if (body.specialty && !(await SpecialtyModel.exists({ slug: body.specialty }))) throw badRequest(`No specialty with slug "${body.specialty}"`, 'unknown_specialty');
+  if (body.specialty && !(await SpecialtyModel.exists({ slug: body.specialty })))
+    throw badRequest(`No specialty with slug "${body.specialty}"`, 'unknown_specialty');
   return body;
 }
 
 const RESOURCES: Record<string, Resource> = {
   doctors: {
-    model: DoctorModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'clinicName', 'area', 'slug', 'registration'], sort: { updatedAt: -1 },
-    filters: ['city', 'specialty', 'facilitySlug', 'gender', 'freeVideo', 'instant', 'managed', 'verified', 'source', 'sample'],
+    model: DoctorModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'clinicName', 'area', 'slug', 'registration'],
+    sort: { updatedAt: -1 },
+    filters: [
+      'city',
+      'specialty',
+      'facilitySlug',
+      'gender',
+      'freeVideo',
+      'instant',
+      'managed',
+      'verified',
+      'source',
+      'sample',
+    ],
     readDefaults: { bookable: true, feeVerified: true, sample: false },
     prepare: prepareDoctor,
     after: async (doc, action) => {
       if (action === 'create') return;
       await SlotModel.deleteMany({ doctorSlug: doc.slug, status: 'open' });
       // Open slots are rebuilt from the (possibly new) schedule and fees on the next view — any edit, not just a schedule change.
-      if (action !== 'delete') await DoctorModel.updateOne({ slug: doc.slug }, { $set: { slotsThrough: null } });
+      if (action !== 'delete')
+        await DoctorModel.updateOne({ slug: doc.slug }, { $set: { slotsThrough: null } });
     },
   },
   facilities: {
-    model: FacilityModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'area', 'slug', 'address'], sort: { updatedAt: -1 },
+    model: FacilityModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'area', 'slug', 'address'],
+    sort: { updatedAt: -1 },
     filters: ['city', 'type', 'category', 'emergency24x7', 'nabh', 'managed', 'source', 'sample'],
     readDefaults: { sample: false },
     prepare: async (body, existing) => {
-      if (body.category && !body.type) body.type = FACILITY_TYPES.find((t) => t.name === body.category)?.group ?? existing?.type;
+      if (body.category && !body.type)
+        body.type = FACILITY_TYPES.find((t) => t.name === body.category)?.group ?? existing?.type;
       if (!existing) body.shortName ??= body.name;
       return body;
     },
   },
   labs: {
-    model: LabModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'area', 'slug'], sort: { updatedAt: -1 }, filters: ['city', 'type', 'homeCollection', 'walkIn', 'managed'],
+    model: LabModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'area', 'slug'],
+    sort: { updatedAt: -1 },
+    filters: ['city', 'type', 'homeCollection', 'walkIn', 'managed'],
     prepare: async (body, existing) => {
       if (!existing) body.shortName ??= body.name;
       return body;
     },
   },
   'lab-tests': {
-    model: LabTestModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'slug', 'covers'], sort: { popularity: -1 }, filters: ['kind', 'department', 'categories', 'homeCollection', 'managed'],
+    model: LabTestModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug', 'covers'],
+    sort: { popularity: -1 },
+    filters: ['kind', 'department', 'categories', 'homeCollection', 'managed'],
     prepare: async (body, existing) => {
       if (!existing) {
-        body.fastingLabel ??= body.fastingHours ? `${body.fastingHours} hrs fasting` : 'No fasting required';
+        body.fastingLabel ??= body.fastingHours
+          ? `${body.fastingHours} hrs fasting`
+          : 'No fasting required';
         body.testsIncluded ??= 1;
       }
-      if (body.price && body.mrp) body.discount = Math.max(0, Math.round((1 - body.price / body.mrp) * 100));
+      if (body.price && body.mrp)
+        body.discount = Math.max(0, Math.round((1 - body.price / body.mrp) * 100));
       return body;
     },
   },
-  'lab-categories': { model: LabCategoryModel, key: 'slug', managed: true, create: true, remove: true, search: ['name', 'slug'], sort: { order: 1 }, filters: ['group'] },
-  medicines: {
-    model: MedicineModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'composition', 'manufacturer', 'slug'], sort: { popularity: -1 }, filters: ['categories', 'rxRequired', 'form', 'managed'],
+  'lab-categories': {
+    model: LabCategoryModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug'],
+    sort: { order: 1 },
+    filters: ['group'],
   },
-  'medicine-categories': { model: MedicineCategoryModel, key: 'slug', managed: true, create: true, remove: true, search: ['name', 'slug'], sort: { order: 1 }, filters: ['featured'] },
+  medicines: {
+    model: MedicineModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'composition', 'manufacturer', 'slug'],
+    sort: { popularity: -1 },
+    filters: ['categories', 'rxRequired', 'form', 'managed'],
+  },
+  'medicine-categories': {
+    model: MedicineCategoryModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug'],
+    sort: { order: 1 },
+    filters: ['featured'],
+  },
   specialties: {
-    model: SpecialtyModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'plural', 'slug'], sort: { name: 1 }, filters: ['category', 'popular', 'video'],
+    model: SpecialtyModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'plural', 'slug'],
+    sort: { name: 1 },
+    filters: ['category', 'popular', 'video'],
   },
   articles: {
-    model: ArticleModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['title', 'excerpt', 'slug'], sort: { publishedAt: -1 }, filters: ['category', 'featured', 'condition'],
+    model: ArticleModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['title', 'excerpt', 'slug'],
+    sort: { publishedAt: -1 },
+    filters: ['category', 'featured', 'condition'],
     prepare: async (body, existing) => {
       if (!existing) body.publishedAt ??= new Date();
       if (body.author?.slug) {
-        const doctor = await DoctorModel.findOne({ slug: body.author.slug }, { name: 1, title: 1 }).lean();
-        if (!doctor) throw badRequest(`No doctor with slug "${body.author.slug}"`, 'unknown_doctor');
+        const doctor = await DoctorModel.findOne(
+          { slug: body.author.slug },
+          { name: 1, title: 1 },
+        ).lean();
+        if (!doctor)
+          throw badRequest(`No doctor with slug "${body.author.slug}"`, 'unknown_doctor');
         body.author = { slug: body.author.slug, name: doctor.name, title: doctor.title };
       }
       return body;
     },
   },
   reviews: {
-    model: ReviewModel, key: '_id', managed: true, create: true, remove: true,
-    search: ['author', 'text', 'doctorSlug'], sort: { createdAt: -1 }, filters: ['doctorSlug', 'rating', 'mode', 'verified', 'sample'],
+    model: ReviewModel,
+    key: '_id',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['author', 'text', 'doctorSlug'],
+    sort: { createdAt: -1 },
+    filters: ['doctorSlug', 'rating', 'mode', 'verified', 'sample'],
     readDefaults: { sample: false },
     after: async (doc) => {
       await refreshDoctorRatings([doc.doctorSlug]);
     },
   },
   cities: {
-    model: CityModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'state', 'slug', 'aliases'], sort: { order: 1, name: 1 }, filters: ['tier', 'managed'],
+    model: CityModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'state', 'slug', 'aliases'],
+    sort: { order: 1, name: 1 },
+    filters: ['tier', 'managed'],
     prepare: prepareCity,
   },
   conditions: {
-    model: ConditionModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'slug', 'summary'], sort: { order: 1, name: 1 }, filters: ['specialty', 'managed'],
+    model: ConditionModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug', 'summary'],
+    sort: { order: 1, name: 1 },
+    filters: ['specialty', 'managed'],
     prepare: checkSpecialty,
   },
   surgeries: {
-    model: SurgeryModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'slug', 'description'], sort: { order: 1, name: 1 }, filters: ['category', 'specialty', 'popular', 'managed'],
+    model: SurgeryModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug', 'description'],
+    sort: { order: 1, name: 1 },
+    filters: ['category', 'specialty', 'popular', 'managed'],
     prepare: checkSpecialty,
   },
   'site-settings': {
-    model: SiteSettingModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['label', 'slug', 'value', 'note'], sort: { group: 1, slug: 1 }, filters: ['group', 'kind'],
+    model: SiteSettingModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['label', 'slug', 'value', 'note'],
+    sort: { group: 1, slug: 1 },
+    filters: ['group', 'kind'],
   },
   content: {
-    model: ContentModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['label', 'slug', 'title', 'page'], sort: { page: 1, order: 1 }, filters: ['page', 'published'],
+    model: ContentModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['label', 'slug', 'title', 'page'],
+    sort: { page: 1, order: 1 },
+    filters: ['page', 'published'],
     prepare: async (body) => {
-      if (body.items !== undefined && !Array.isArray(body.items)) throw badRequest('items: send a list', 'invalid_record');
+      if (body.items !== undefined && !Array.isArray(body.items))
+        throw badRequest('items: send a list', 'invalid_record');
       return body;
     },
   },
   testimonials: {
-    model: TestimonialModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'text', 'location'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published', 'sample'],
+    model: TestimonialModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'text', 'location'],
+    sort: { audience: 1, order: 1 },
+    filters: ['audience', 'published', 'sample'],
     readDefaults: { sample: false },
     prepare: async (body, existing) => {
       const name = body.name ?? existing?.name;
-      if (!existing && !body.initials && name) body.initials = String(name).replace(/^Dr\.?\s+/i, '').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+      if (!existing && !body.initials && name)
+        body.initials = String(name)
+          .replace(/^Dr\.?\s+/i, '')
+          .split(/\s+/)
+          .map((w: string) => w[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase();
       return body;
     },
   },
   plans: {
-    model: PlanModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['name', 'slug', 'tagline'], sort: { audience: 1, order: 1 }, filters: ['audience', 'published'],
+    model: PlanModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['name', 'slug', 'tagline'],
+    sort: { audience: 1, order: 1 },
+    filters: ['audience', 'published'],
   },
   leads: {
-    model: LeadModel, key: '_id', remove: true, editable: ['status', 'note'],
-    search: ['name', 'phone', 'email', 'organisation', 'message'], sort: { createdAt: -1 }, filters: ['kind', 'status', 'city'],
+    model: LeadModel,
+    key: '_id',
+    remove: true,
+    editable: ['status', 'note'],
+    search: ['name', 'phone', 'email', 'organisation', 'message'],
+    sort: { createdAt: -1 },
+    filters: ['kind', 'status', 'city'],
   },
   appointments: {
-    model: AppointmentModel, key: '_id', editable: ['status', 'notes'],
-    search: ['reference', 'doctorSlug', 'patient.name', 'patient.phone'], sort: { startsAt: -1 }, filters: ['status', 'mode', 'doctorSlug'],
+    model: AppointmentModel,
+    key: '_id',
+    editable: ['status', 'notes'],
+    search: ['reference', 'doctorSlug', 'patient.name', 'patient.phone'],
+    sort: { startsAt: -1 },
+    filters: ['status', 'mode', 'doctorSlug'],
     after: async (doc) => {
       // A cancelled appointment gives its slot back.
-      if (doc.status === 'cancelled') await SlotModel.updateOne({ _id: doc.slot, status: 'booked' }, { status: 'open' });
+      if (doc.status === 'cancelled')
+        await SlotModel.updateOne({ _id: doc.slot, status: 'booked' }, { status: 'open' });
     },
   },
   orders: {
-    model: OrderModel, key: '_id', editable: ['status', 'payment'],
-    search: ['reference', 'patient.name', 'patient.phone', 'items.name'], sort: { createdAt: -1 }, filters: ['kind', 'status', 'collectionMode'],
+    model: OrderModel,
+    key: '_id',
+    editable: ['status', 'payment'],
+    search: ['reference', 'patient.name', 'patient.phone', 'items.name'],
+    sort: { createdAt: -1 },
+    filters: ['kind', 'status', 'collectionMode'],
   },
   users: {
-    model: UserModel, key: '_id', editable: ['name', 'email', 'gender', 'bloodGroup'],
-    search: ['name', 'phone', 'email'], sort: { lastLoginAt: -1 }, filters: ['gender'],
+    model: UserModel,
+    key: '_id',
+    editable: ['name', 'email', 'gender', 'bloodGroup'],
+    search: ['name', 'phone', 'email'],
+    sort: { lastLoginAt: -1 },
+    filters: ['gender'],
   },
   videos: {
-    model: VideoModel, key: 'slug', managed: true, create: true, remove: true,
-    search: ['title', 'doctorSlug', 'description'], sort: { order: 1, createdAt: -1 }, filters: ['kind', 'doctorSlug', 'specialty', 'published', 'featured'],
+    model: VideoModel,
+    key: 'slug',
+    managed: true,
+    create: true,
+    remove: true,
+    search: ['title', 'doctorSlug', 'description'],
+    sort: { order: 1, createdAt: -1 },
+    filters: ['kind', 'doctorSlug', 'specialty', 'published', 'featured'],
     prepare: async (body) => {
       if (body.url !== undefined && embedFor(String(body.url)).provider === 'link') {
-        throw badRequest('url: paste a YouTube, YouTube Shorts or Instagram reel link, or a direct .mp4 file', 'invalid_record');
+        throw badRequest(
+          'url: paste a YouTube, YouTube Shorts or Instagram reel link, or a direct .mp4 file',
+          'invalid_record',
+        );
       }
-      if (body.doctorSlug && !(await DoctorModel.exists({ slug: body.doctorSlug }))) throw badRequest(`No doctor with slug "${body.doctorSlug}"`, 'unknown_doctor');
+      if (body.doctorSlug && !(await DoctorModel.exists({ slug: body.doctorSlug })))
+        throw badRequest(`No doctor with slug "${body.doctorSlug}"`, 'unknown_doctor');
       return body;
     },
   },
   interactions: {
-    model: InteractionModel, key: '_id', remove: true, editable: [],
-    search: ['targetName', 'targetSlug', 'userPhone', 'number'], sort: { createdAt: -1 }, filters: ['kind', 'targetType', 'city', 'device'],
+    model: InteractionModel,
+    key: '_id',
+    remove: true,
+    editable: [],
+    search: ['targetName', 'targetSlug', 'userPhone', 'number'],
+    sort: { createdAt: -1 },
+    filters: ['kind', 'targetType', 'city', 'device'],
   },
   reports: {
-    model: ReportModel, key: '_id', remove: true, editable: ['status', 'note'],
-    search: ['targetName', 'targetSlug', 'details', 'contact'], sort: { createdAt: -1 }, filters: ['status', 'targetType', 'city'],
+    model: ReportModel,
+    key: '_id',
+    remove: true,
+    editable: ['status', 'note'],
+    search: ['targetName', 'targetSlug', 'details', 'contact'],
+    sort: { createdAt: -1 },
+    filters: ['status', 'targetType', 'city'],
   },
   'login-events': {
-    model: LoginEventModel, key: '_id', editable: [],
-    search: ['phone', 'name'], sort: { createdAt: -1 }, filters: ['firstLogin', 'device'],
+    model: LoginEventModel,
+    key: '_id',
+    editable: [],
+    search: ['phone', 'name'],
+    sort: { createdAt: -1 },
+    filters: ['firstLogin', 'device'],
   },
 };
 
@@ -286,11 +539,16 @@ const RANKED = { doctors: DoctorModel, facilities: FacilityModel, labs: LabModel
 
 /** Strips anything that could be a Mongo operator or overwrite bookkeeping fields. */
 function clean(body: unknown): Doc {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest('Send the record as a JSON object');
+  if (!body || typeof body !== 'object' || Array.isArray(body))
+    throw badRequest('Send the record as a JSON object');
   const walk = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(walk);
     if (value && typeof value === 'object' && !(value instanceof Date)) {
-      return Object.fromEntries(Object.entries(value as Doc).filter(([k]) => !k.startsWith('$') && !k.includes('.')).map(([k, v]) => [k, walk(v)]));
+      return Object.fromEntries(
+        Object.entries(value as Doc)
+          .filter(([k]) => !k.startsWith('$') && !k.includes('.'))
+          .map(([k, v]) => [k, walk(v)]),
+      );
     }
     return value;
   };
@@ -305,13 +563,30 @@ async function write<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (error) {
     if (error instanceof HttpError) throw error;
-    const e = error as { name?: string; code?: number; keyValue?: Doc; errors?: Record<string, { message: string; path: string }>; message?: string };
-    if (e.code === 11000) throw conflict(`A record with ${Object.entries(e.keyValue ?? {}).map(([k, v]) => `${k} "${v}"`).join(', ')} already exists`, 'duplicate');
+    const e = error as {
+      name?: string;
+      code?: number;
+      keyValue?: Doc;
+      errors?: Record<string, { message: string; path: string }>;
+      message?: string;
+    };
+    if (e.code === 11000)
+      throw conflict(
+        `A record with ${Object.entries(e.keyValue ?? {})
+          .map(([k, v]) => `${k} "${v}"`)
+          .join(', ')} already exists`,
+        'duplicate',
+      );
     if (e.name === 'ValidationError' && e.errors) {
       const first = Object.values(e.errors)[0]!;
-      throw new HttpError(400, `${first.path}: ${first.message.replace(/^Path `[^`]+` /, '')}`, 'invalid_record');
+      throw new HttpError(
+        400,
+        `${first.path}: ${first.message.replace(/^Path `[^`]+` /, '')}`,
+        'invalid_record',
+      );
     }
-    if (e.name === 'CastError') throw badRequest(e.message ?? 'A field has the wrong type', 'invalid_record');
+    if (e.name === 'CastError')
+      throw badRequest(e.message ?? 'A field has the wrong type', 'invalid_record');
     throw error;
   }
 }
@@ -344,15 +619,29 @@ async function requireAdmin(request: FastifyRequest, _reply: FastifyReply) {
 }
 
 export async function adminRoutes(app: FastifyInstance) {
-  app.post('/auth/login', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request) => {
-    const { email, password } = z.object({ email: z.string().trim().toLowerCase(), password: z.string() }).parse(request.body);
-    if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) throw new HttpError(503, `Admin sign-in is not configured: ${env.adminProblem}`, 'admin_disabled');
-    // Compare both, always, so timing doesn't reveal which one was wrong.
-    const ok = same(email, env.ADMIN_EMAIL.toLowerCase()) && same(password, env.ADMIN_PASSWORD);
-    if (!ok) throw unauthorized('Wrong email or password');
-    const token = await app.jwt.sign({ sub: 'admin', phone: '', role: 'admin' }, { expiresIn: '12h' });
-    return { token, admin: { email: env.ADMIN_EMAIL } };
-  });
+  app.post(
+    '/auth/login',
+    { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } },
+    async (request) => {
+      const { email, password } = z
+        .object({ email: z.string().trim().toLowerCase(), password: z.string() })
+        .parse(request.body);
+      if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD)
+        throw new HttpError(
+          503,
+          `Admin sign-in is not configured: ${env.adminProblem}`,
+          'admin_disabled',
+        );
+      // Compare both, always, so timing doesn't reveal which one was wrong.
+      const ok = same(email, env.ADMIN_EMAIL.toLowerCase()) && same(password, env.ADMIN_PASSWORD);
+      if (!ok) throw unauthorized('Wrong email or password');
+      const token = await app.jwt.sign(
+        { sub: 'admin', phone: '', role: 'admin' },
+        { expiresIn: '12h' },
+      );
+      return { token, admin: { email: env.ADMIN_EMAIL } };
+    },
+  );
 
   app.register(async (secured) => {
     secured.addHook('preHandler', requireAdmin);
@@ -371,25 +660,51 @@ export async function adminRoutes(app: FastifyInstance) {
 
     /** Dropdown data for the forms. */
     secured.get('/meta', async () => {
-      const [specialties, facilities, labCategories, medicineCategories, articleCategories] = await Promise.all([
-        SpecialtyModel.find({}, { slug: 1, name: 1, subSpecialties: 1 }).sort({ name: 1 }).lean(),
-        FacilityModel.find({}, { slug: 1, name: 1, city: 1, area: 1 }).sort({ city: 1, name: 1 }).lean(),
-        LabCategoryModel.find({}, { slug: 1, name: 1 }).sort({ order: 1 }).lean(),
-        MedicineCategoryModel.find({}, { slug: 1, name: 1 }).sort({ order: 1 }).lean(),
-        ArticleModel.distinct('category'),
-      ]);
+      const [specialties, facilities, labCategories, medicineCategories, articleCategories] =
+        await Promise.all([
+          SpecialtyModel.find({}, { slug: 1, name: 1, subSpecialties: 1 }).sort({ name: 1 }).lean(),
+          FacilityModel.find({}, { slug: 1, name: 1, city: 1, area: 1 })
+            .sort({ city: 1, name: 1 })
+            .lean(),
+          LabCategoryModel.find({}, { slug: 1, name: 1 }).sort({ order: 1 }).lean(),
+          MedicineCategoryModel.find({}, { slug: 1, name: 1 }).sort({ order: 1 }).lean(),
+          ArticleModel.distinct('category'),
+        ]);
       return {
-        cities: cities().map((c) => ({ slug: c.slug, name: c.name, localities: c.localities.map((l) => l.name) })),
-        specialties: specialties.map((s) => ({ slug: s.slug, name: s.name, focusAreas: s.subSpecialties.map((f: Doc) => ({ slug: f.slug, name: f.name })) })),
+        cities: cities().map((c) => ({
+          slug: c.slug,
+          name: c.name,
+          localities: c.localities.map((l) => l.name),
+        })),
+        specialties: specialties.map((s) => ({
+          slug: s.slug,
+          name: s.name,
+          focusAreas: s.subSpecialties.map((f: Doc) => ({ slug: f.slug, name: f.name })),
+        })),
         specialtyCategories: SPECIALTY_CATEGORIES,
         facilityTypes: FACILITY_TYPES,
-        facilities: facilities.map((f) => ({ slug: f.slug, name: f.name, city: f.city, area: f.area })),
+        facilities: facilities.map((f) => ({
+          slug: f.slug,
+          name: f.name,
+          city: f.city,
+          area: f.area,
+        })),
         labCategories: labCategories.map((c) => ({ slug: c.slug, name: c.name })),
         medicineCategories: medicineCategories.map((c) => ({ slug: c.slug, name: c.name })),
         articleCategories,
-        surgeries: surgeries().map((s) => ({ slug: s.slug, name: s.name, category: s.category, specialty: s.specialty, cost: s.cost })),
+        surgeries: surgeries().map((s) => ({
+          slug: s.slug,
+          name: s.name,
+          category: s.category,
+          specialty: s.specialty,
+          cost: s.cost,
+        })),
         surgeryCategories: [...new Set(surgeries().map((s) => s.category))],
-        conditions: conditions().map((c) => ({ slug: c.slug, name: c.name, specialty: c.specialty })),
+        conditions: conditions().map((c) => ({
+          slug: c.slug,
+          name: c.name,
+          specialty: c.specialty,
+        })),
         contentPages: await ContentModel.distinct('page'),
         settingGroups: await SiteSettingModel.distinct('group'),
       };
@@ -400,30 +715,78 @@ export async function adminRoutes(app: FastifyInstance) {
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today.getTime() + 86_400_000);
       const counts = Object.fromEntries(
-        await Promise.all(Object.entries(RESOURCES).map(async ([name, r]) => [name, await r.model.estimatedDocumentCount()] as const)),
+        await Promise.all(
+          Object.entries(RESOURCES).map(
+            async ([name, r]) => [name, await r.model.estimatedDocumentCount()] as const,
+          ),
+        ),
       );
       const weekAgo = new Date(Date.now() - 7 * 86_400_000);
       const [byMode, calls, logins, activeUsers, newReports] = await Promise.all([
-        AppointmentModel.aggregate<{ _id: string; count: number }>([{ $match: { startsAt: { $gte: today, $lt: tomorrow }, status: { $ne: 'cancelled' } } }, { $group: { _id: '$mode', count: { $sum: 1 } } }]),
-        InteractionModel.aggregate<{ _id: string; count: number }>([{ $match: { createdAt: { $gte: today } } }, { $group: { _id: '$kind', count: { $sum: 1 } } }]),
+        AppointmentModel.aggregate<{ _id: string; count: number }>([
+          { $match: { startsAt: { $gte: today, $lt: tomorrow }, status: { $ne: 'cancelled' } } },
+          { $group: { _id: '$mode', count: { $sum: 1 } } },
+        ]),
+        InteractionModel.aggregate<{ _id: string; count: number }>([
+          { $match: { createdAt: { $gte: today } } },
+          { $group: { _id: '$kind', count: { $sum: 1 } } },
+        ]),
         LoginEventModel.countDocuments({ createdAt: { $gte: today } }),
         UserModel.countDocuments({ lastLoginAt: { $gte: weekAgo } }),
         ReportModel.countDocuments({ status: 'new' }),
       ]);
-      const [appointmentsToday, newLeads, managed, recentAppointments, recentLeads, recentOrders, ordersByStatus] = await Promise.all([
-        AppointmentModel.countDocuments({ startsAt: { $gte: today, $lt: tomorrow }, status: { $ne: 'cancelled' } }),
+      const [
+        appointmentsToday,
+        newLeads,
+        managed,
+        recentAppointments,
+        recentLeads,
+        recentOrders,
+        ordersByStatus,
+      ] = await Promise.all([
+        AppointmentModel.countDocuments({
+          startsAt: { $gte: today, $lt: tomorrow },
+          status: { $ne: 'cancelled' },
+        }),
         LeadModel.countDocuments({ status: 'new' }),
         DoctorModel.countDocuments({ managed: true }),
-        AppointmentModel.find({}, { reference: 1, doctorSlug: 1, startsAt: 1, mode: 1, status: 1, amount: 1, 'patient.name': 1 }).sort({ createdAt: -1 }).limit(8).lean(),
-        LeadModel.find({}, 'kind name phone email city status surgery createdAt').sort({ createdAt: -1 }).limit(8).lean(),
-        OrderModel.find({}, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 }).sort({ createdAt: -1 }).limit(8).lean(),
-        OrderModel.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+        AppointmentModel.find(
+          {},
+          {
+            reference: 1,
+            doctorSlug: 1,
+            startsAt: 1,
+            mode: 1,
+            status: 1,
+            amount: 1,
+            'patient.name': 1,
+          },
+        )
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean(),
+        LeadModel.find({}, 'kind name phone email city status surgery createdAt')
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean(),
+        OrderModel.find({}, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 })
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean(),
+        OrderModel.aggregate<{ _id: string; count: number }>([
+          { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]),
       ]);
-      const count = (rows: { _id: string; count: number }[], key: string) => rows.find((r) => r._id === key)?.count ?? 0;
+      const count = (rows: { _id: string; count: number }[], key: string) =>
+        rows.find((r) => r._id === key)?.count ?? 0;
       return {
         counts,
         appointmentsToday,
-        appointmentsTodayByMode: { clinic: count(byMode, 'clinic'), video: count(byMode, 'video'), audio: count(byMode, 'audio') },
+        appointmentsTodayByMode: {
+          clinic: count(byMode, 'clinic'),
+          video: count(byMode, 'video'),
+          audio: count(byMode, 'audio'),
+        },
         callsToday: count(calls, 'call'),
         whatsappToday: count(calls, 'whatsapp'),
         loginsToday: logins,
@@ -444,11 +807,25 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!Types.ObjectId.isValid(id)) throw notFound('Record not found');
       const [logins, appointments, orders, interactions] = await Promise.all([
         LoginEventModel.find({ user: id }).sort({ createdAt: -1 }).limit(20).lean(),
-        AppointmentModel.find({ user: id }, { reference: 1, doctorSlug: 1, startsAt: 1, mode: 1, status: 1, amount: 1 }).sort({ startsAt: -1 }).limit(20).lean(),
-        OrderModel.find({ user: id }, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 }).sort({ createdAt: -1 }).limit(20).lean(),
+        AppointmentModel.find(
+          { user: id },
+          { reference: 1, doctorSlug: 1, startsAt: 1, mode: 1, status: 1, amount: 1 },
+        )
+          .sort({ startsAt: -1 })
+          .limit(20)
+          .lean(),
+        OrderModel.find({ user: id }, { reference: 1, kind: 1, total: 1, status: 1, createdAt: 1 })
+          .sort({ createdAt: -1 })
+          .limit(20)
+          .lean(),
         InteractionModel.find({ user: id }).sort({ createdAt: -1 }).limit(20).lean(),
       ]);
-      return { logins: logins.map(toClient), appointments: appointments.map(toClient), orders: orders.map(toClient), interactions: interactions.map(toClient) };
+      return {
+        logins: logins.map(toClient),
+        appointments: appointments.map(toClient),
+        orders: orders.map(toClient),
+        interactions: interactions.map(toClient),
+      };
     });
 
     /** Ranking board: the current order of doctors (city + specialty), hospitals/clinics or labs (city). */
@@ -466,13 +843,34 @@ export async function adminRoutes(app: FastifyInstance) {
       if (q.type === 'doctors' && q.specialty) filter.specialty = q.specialty;
       if (q.type === 'facilities' && q.category) filter.category = q.category;
       if (q.q) filter.name = new RegExp(escapeRegex(q.q), 'i');
-      const sort: Record<string, 1 | -1> = q.type === 'doctors' ? { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } : { rankScore: -1, rating: -1, slug: 1 };
-      const projection = { slug: 1, name: 1, area: 1, rank: 1, rating: 1, reviewCount: 1, specialty: 1, category: 1, type: 1, clinicName: 1, source: 1 } as const;
+      const sort: Record<string, 1 | -1> =
+        q.type === 'doctors'
+          ? { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 }
+          : { rankScore: -1, rating: -1, slug: 1 };
+      const projection = {
+        slug: 1,
+        name: 1,
+        area: 1,
+        rank: 1,
+        rating: 1,
+        reviewCount: 1,
+        specialty: 1,
+        category: 1,
+        type: 1,
+        clinicName: 1,
+        source: 1,
+      } as const;
       // Doctors and hospitals: Curxx's own plus the Doctar directory, in the website's order.
       const store = q.type === 'doctors' ? Doctors : q.type === 'facilities' ? Facilities : null;
       const [items, total] = store
-        ? await Promise.all([store.find(filter, { projection, sort, limit: 200 }), store.count(filter)])
-        : await Promise.all([(RANKED[q.type] as Model<any>).find(filter, projection).sort(sort).limit(200).lean(), (RANKED[q.type] as Model<any>).countDocuments(filter)]);
+        ? await Promise.all([
+            store.find(filter, { projection, sort, limit: 200 }),
+            store.count(filter),
+          ])
+        : await Promise.all([
+            (RANKED[q.type] as Model<any>).find(filter, projection).sort(sort).limit(200).lean(),
+            (RANKED[q.type] as Model<any>).countDocuments(filter),
+          ]);
       return { items: (items as Doc[]).map(toClient), total };
     });
 
@@ -481,21 +879,50 @@ export async function adminRoutes(app: FastifyInstance) {
       const body = z
         .object({
           type: z.enum(['doctors', 'facilities', 'labs']),
-          ranks: z.array(z.object({ slug: z.string().min(1), rank: z.coerce.number().int().min(0).max(9999) })).min(1).max(500),
+          ranks: z
+            .array(
+              z.object({ slug: z.string().min(1), rank: z.coerce.number().int().min(0).max(9999) }),
+            )
+            .min(1)
+            .max(500),
         })
         .parse(request.body);
       const model = RANKED[body.type] as Model<any>;
       // Doctar records keep their rank in an overlay (Doctar itself is never written to).
-      const live = body.type === 'doctors' ? liveDirectory().doctorBySlug : body.type === 'facilities' ? liveDirectory().facilityBySlug : null;
+      const live =
+        body.type === 'doctors'
+          ? liveDirectory().doctorBySlug
+          : body.type === 'facilities'
+            ? liveDirectory().facilityBySlug
+            : null;
       const doctar = body.ranks.flatMap((r) => {
         const d = live?.get(r.slug);
-        return d?.source === 'doctar' ? [{ ...r, doctarId: String(d.doctarId), name: String(d.name) }] : [];
+        return d?.source === 'doctar'
+          ? [{ ...r, doctarId: String(d.doctarId), name: String(d.name) }]
+          : [];
       });
       const own = body.ranks.filter((r) => !doctar.some((d) => d.slug === r.slug));
-      const result = own.length ? await model.bulkWrite(own.map((r) => ({ updateOne: { filter: { slug: r.slug }, update: { $set: { rank: r.rank, rankScore: rankScoreOf(r.rank) } } } }))) : null;
+      const result = own.length
+        ? await model.bulkWrite(
+            own.map((r) => ({
+              updateOne: {
+                filter: { slug: r.slug },
+                update: { $set: { rank: r.rank, rankScore: rankScoreOf(r.rank) } },
+              },
+            })),
+          )
+        : null;
       if (doctar.length) {
         const kind = body.type === 'doctors' ? ('doctor' as const) : ('facility' as const);
-        await DoctarOverlayModel.bulkWrite(doctar.map((d) => ({ updateOne: { filter: { kind, doctarId: d.doctarId }, update: { $set: { rank: d.rank, slug: d.slug, name: d.name } }, upsert: true } })));
+        await DoctarOverlayModel.bulkWrite(
+          doctar.map((d) => ({
+            updateOne: {
+              filter: { kind, doctarId: d.doctarId },
+              update: { $set: { rank: d.rank, slug: d.slug, name: d.name } },
+              upsert: true,
+            },
+          })),
+        );
         await refreshOverlays();
       }
       return { updated: (result?.modifiedCount ?? 0) + doctar.length };
@@ -518,29 +945,55 @@ export async function adminRoutes(app: FastifyInstance) {
           q: z.string().trim().max(100).optional(),
           page: z.coerce.number().int().min(1).default(1),
           limit: z.coerce.number().int().min(1).max(100).default(20),
-          sort: z.string().regex(/^-?[a-zA-Z.]+$/).optional(),
+          sort: z
+            .string()
+            .regex(/^-?[a-zA-Z.]+$/)
+            .optional(),
         })
         .parse(query);
       const filter: Doc = {};
       for (const f of r.filters) {
         const v = query[f];
         if (v === undefined || v === '') continue;
-        filter[f] = v === 'true' ? true : v === 'false' ? { $ne: true } : f === 'rating' || f === 'tier' ? Number(v) : v;
+        filter[f] =
+          v === 'true'
+            ? true
+            : v === 'false'
+              ? { $ne: true }
+              : f === 'rating' || f === 'tier'
+                ? Number(v)
+                : v;
       }
       if (q) {
         const re = new RegExp(escapeRegex(q), 'i');
-        filter.$or = [...r.search.map((field) => ({ [field]: re })), ...(Types.ObjectId.isValid(q) ? [{ _id: q }] : [])];
+        filter.$or = [
+          ...r.search.map((field) => ({ [field]: re })),
+          ...(Types.ObjectId.isValid(q) ? [{ _id: q }] : []),
+        ];
       }
       const order = sort ? { [sort.replace(/^-/, '')]: sort.startsWith('-') ? -1 : 1 } : r.sort;
       const [items, total] = await Promise.all([
-        r.model.find(filter).sort({ ...order, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+        r.model
+          .find(filter)
+          .sort({ ...order, _id: 1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean(),
         r.model.countDocuments(filter),
       ]);
-      return { items: (items as Doc[]).map((d) => toClient({ ...r.readDefaults, ...d })), total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
+      return {
+        items: (items as Doc[]).map((d) => toClient({ ...r.readDefaults, ...d })),
+        total,
+        page,
+        limit,
+        pages: Math.max(1, Math.ceil(total / limit)),
+      };
     });
 
     secured.get('/:resource/:key', async (request) => {
-      const { resource: name, key } = z.object({ resource: z.string(), key: z.string() }).parse(request.params);
+      const { resource: name, key } = z
+        .object({ resource: z.string(), key: z.string() })
+        .parse(request.params);
       const r = resourceOf(name);
       const doc = await r.model.findOne(lookupFilter(r, key)).lean();
       if (!doc) throw notFound('Record not found');
@@ -550,7 +1003,8 @@ export async function adminRoutes(app: FastifyInstance) {
     secured.post('/:resource', async (request, reply) => {
       const { resource: name } = z.object({ resource: z.string() }).parse(request.params);
       const r = resourceOf(name);
-      if (!r.create) throw badRequest(`New ${name} can't be added from the admin panel`, 'read_only');
+      if (!r.create)
+        throw badRequest(`New ${name} can't be added from the admin panel`, 'read_only');
       let body = clean(request.body);
       if (r.key === 'slug') {
         body.slug = slugify(String(body.slug || body.name || body.title || body.label || ''));
@@ -568,24 +1022,37 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     secured.patch('/:resource/:key', async (request) => {
-      const { resource: name, key } = z.object({ resource: z.string(), key: z.string() }).parse(request.params);
+      const { resource: name, key } = z
+        .object({ resource: z.string(), key: z.string() })
+        .parse(request.params);
       const r = resourceOf(name);
       const existing = await r.model.findOne(lookupFilter(r, key)).lean<Doc>();
       if (!existing) throw notFound('Record not found');
       let body = clean(request.body);
-      if (r.editable) body = Object.fromEntries(Object.entries(body).filter(([k]) => r.editable!.includes(k)));
+      if (r.editable)
+        body = Object.fromEntries(Object.entries(body).filter(([k]) => r.editable!.includes(k)));
       if (r.key === 'slug') delete body.slug; // the slug is the public URL; renaming would break links
       if (r.prepare) body = await r.prepare(body, existing);
       if ('rank' in body) body.rankScore = rankScoreOf(body.rank);
       if (r.managed) body.managed = true;
-      const doc = await write(() => r.model.findOneAndUpdate({ _id: existing._id }, { $set: body }, { new: true, runValidators: true }).lean<Doc>());
+      const doc = await write(() =>
+        r.model
+          .findOneAndUpdate(
+            { _id: existing._id },
+            { $set: body },
+            { new: true, runValidators: true },
+          )
+          .lean<Doc>(),
+      );
       await r.after?.(doc!, 'update');
       await afterWrite(name);
       return { item: toClient(doc!) };
     });
 
     secured.delete('/:resource/:key', async (request) => {
-      const { resource: name, key } = z.object({ resource: z.string(), key: z.string() }).parse(request.params);
+      const { resource: name, key } = z
+        .object({ resource: z.string(), key: z.string() })
+        .parse(request.params);
       const r = resourceOf(name);
       if (!r.remove) throw badRequest(`${name} can't be deleted from the admin panel`, 'read_only');
       const doc = await r.model.findOneAndDelete(lookupFilter(r, key)).lean<Doc>();

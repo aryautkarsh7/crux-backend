@@ -40,5 +40,7 @@ const specialtySchema = new Schema(
 
 export type SubSpecialty = InferSchemaType<typeof subSpecialtySchema>;
 /** Plain sub-specialty objects rather than mongoose subdocuments, so seeds and updates stay assignable. */
-export type Specialty = Omit<InferSchemaType<typeof specialtySchema>, 'subSpecialties'> & { subSpecialties: SubSpecialty[] };
+export type Specialty = Omit<InferSchemaType<typeof specialtySchema>, 'subSpecialties'> & {
+  subSpecialties: SubSpecialty[];
+};
 export const SpecialtyModel = model<Specialty>('Specialty', specialtySchema);

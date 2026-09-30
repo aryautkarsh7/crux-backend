@@ -12,7 +12,12 @@ const appointmentSchema = new Schema(
     mode: { type: String, enum: ['clinic', 'video', 'audio'], required: true, index: true },
     amount: { type: Number, required: true },
     /** requested = a booking request to a doctor who confirms by hand (imported doctors); no payment is taken. */
-    status: { type: String, enum: ['requested', 'confirmed', 'completed', 'cancelled'], default: 'confirmed', index: true },
+    status: {
+      type: String,
+      enum: ['requested', 'confirmed', 'completed', 'cancelled'],
+      default: 'confirmed',
+      index: true,
+    },
     focus: { type: String, default: '' },
     notes: { type: String, default: '' },
     patient: {
@@ -39,7 +44,10 @@ const appointmentSchema = new Schema(
 );
 
 appointmentSchema.index({ user: 1, startsAt: -1 });
-appointmentSchema.index({ requestIp: 1, createdAt: -1 }, { partialFilterExpression: { requestIp: { $type: 'string' } } });
+appointmentSchema.index(
+  { requestIp: 1, createdAt: -1 },
+  { partialFilterExpression: { requestIp: { $type: 'string' } } },
+);
 appointmentSchema.index({ 'notify.status': 1 }, { sparse: true });
 
 export type Appointment = InferSchemaType<typeof appointmentSchema>;

@@ -23,37 +23,73 @@ const addressBody = z.object({
   isDefault: z.boolean().default(false),
 });
 
-type Notification = { id: string; icon: string; title: string; body: string; href: string; at: Date; tone: 'info' | 'success' | 'warning' };
+type Notification = {
+  id: string;
+  icon: string;
+  title: string;
+  body: string;
+  href: string;
+  at: Date;
+  tone: 'info' | 'success' | 'warning';
+};
 
 export async function meRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
   // ---- Saved doctors & articles ----
   app.get('/saved', async (request) => {
-    const user = await UserModel.findById(request.user.sub, { savedDoctors: 1, savedArticles: 1 }).lean();
+    const user = await UserModel.findById(request.user.sub, {
+      savedDoctors: 1,
+      savedArticles: 1,
+    }).lean();
     if (!user) throw notFound('Account not found');
     const [doctors, articles] = await Promise.all([
       Doctors.find({ slug: { $in: user.savedDoctors } }),
       ArticleModel.find({ slug: { $in: user.savedArticles } }, { sections: 0 }).lean(),
     ]);
-    return { doctors: doctors.map((d) => toDto(d)), articles: articles.map((a) => toDto(a)), slugs: { doctors: user.savedDoctors, articles: user.savedArticles } };
+    return {
+      doctors: doctors.map((d) => toDto(d)),
+      articles: articles.map((a) => toDto(a)),
+      slugs: { doctors: user.savedDoctors, articles: user.savedArticles },
+    };
   });
 
-  const savedParams = z.object({ kind: z.enum(['doctors', 'articles']), slug: z.string().min(2).max(120) });
-  const savedField = (kind: 'doctors' | 'articles') => (kind === 'doctors' ? 'savedDoctors' : 'savedArticles');
+  const savedParams = z.object({
+    kind: z.enum(['doctors', 'articles']),
+    slug: z.string().min(2).max(120),
+  });
+  const savedField = (kind: 'doctors' | 'articles') =>
+    kind === 'doctors' ? 'savedDoctors' : 'savedArticles';
 
   app.put('/saved/:kind/:slug', async (request) => {
     const { kind, slug } = savedParams.parse(request.params);
-    const exists = kind === 'doctors' ? await Doctors.findOne({ slug }, { slug: 1 }) : await ArticleModel.exists({ slug });
+    const exists =
+      kind === 'doctors'
+        ? await Doctors.findOne({ slug }, { slug: 1 })
+        : await ArticleModel.exists({ slug });
     if (!exists) throw notFound(kind === 'doctors' ? 'Doctor not found' : 'Article not found');
-    const user = await UserModel.findByIdAndUpdate(request.user.sub, { $addToSet: { [savedField(kind)]: slug } }, { new: true }).lean();
-    return { saved: true, slugs: { doctors: user?.savedDoctors ?? [], articles: user?.savedArticles ?? [] } };
+    const user = await UserModel.findByIdAndUpdate(
+      request.user.sub,
+      { $addToSet: { [savedField(kind)]: slug } },
+      { new: true },
+    ).lean();
+    return {
+      saved: true,
+      slugs: { doctors: user?.savedDoctors ?? [], articles: user?.savedArticles ?? [] },
+    };
   });
 
   app.delete('/saved/:kind/:slug', async (request) => {
     const { kind, slug } = savedParams.parse(request.params);
-    const user = await UserModel.findByIdAndUpdate(request.user.sub, { $pull: { [savedField(kind)]: slug } }, { new: true }).lean();
-    return { saved: false, slugs: { doctors: user?.savedDoctors ?? [], articles: user?.savedArticles ?? [] } };
+    const user = await UserModel.findByIdAndUpdate(
+      request.user.sub,
+      { $pull: { [savedField(kind)]: slug } },
+      { new: true },
+    ).lean();
+    return {
+      saved: false,
+      slugs: { doctors: user?.savedDoctors ?? [], articles: user?.savedArticles ?? [] },
+    };
   });
 
   // ---- Addresses ----
@@ -66,9 +102,13 @@ export async function meRoutes(app: FastifyInstance) {
     const body = addressBody.parse(request.body);
     const user = await UserModel.findById(request.user.sub);
     if (!user) throw notFound('Account not found');
-    if (user.addresses.length >= 10) throw badRequest('You can save up to 10 addresses', 'too_many_addresses');
+    if (user.addresses.length >= 10)
+      throw badRequest('You can save up to 10 addresses', 'too_many_addresses');
     const makeDefault = body.isDefault || user.addresses.length === 0;
-    if (makeDefault) user.addresses.forEach((a) => { a.isDefault = false; });
+    if (makeDefault)
+      user.addresses.forEach((a) => {
+        a.isDefault = false;
+      });
     user.addresses.push({ ...body, isDefault: makeDefault });
     await user.save();
     reply.code(201);
@@ -79,7 +119,9 @@ export async function meRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: objectId }).parse(request.params);
     const user = await UserModel.findById(request.user.sub);
     if (!user || !user.addresses.id(id)) throw notFound('Address not found');
-    user.addresses.forEach((a) => { a.isDefault = String(a._id) === id; });
+    user.addresses.forEach((a) => {
+      a.isDefault = String(a._id) === id;
+    });
     await user.save();
     return { addresses: user.toObject().addresses.map((a) => toDto(a)) };
   });
@@ -101,32 +143,99 @@ export async function meRoutes(app: FastifyInstance) {
     const userId = request.user.sub;
     const now = Date.now();
     const [appointments, orders, records, grants] = await Promise.all([
-      AppointmentModel.find({ user: userId, status: { $in: ['confirmed', 'requested'] }, startsAt: { $gte: new Date(now - 3_600_000), $lte: new Date(now + 3 * 86_400_000) } }).sort({ startsAt: 1 }).limit(5).populate('doctor', 'name clinicName area').lean(),
-      OrderModel.find({ user: userId, createdAt: { $gte: new Date(now - 7 * 86_400_000) } }).sort({ createdAt: -1 }).limit(5).lean(),
-      HealthRecordModel.find({ user: userId, date: { $gte: new Date(now - 30 * 86_400_000) } }).sort({ date: -1 }).limit(3).lean(),
-      AccessGrantModel.find({ user: userId, status: 'active', expiresAt: { $gte: new Date(now), $lte: new Date(now + 7 * 86_400_000) } }).lean(),
+      AppointmentModel.find({
+        user: userId,
+        status: { $in: ['confirmed', 'requested'] },
+        startsAt: { $gte: new Date(now - 3_600_000), $lte: new Date(now + 3 * 86_400_000) },
+      })
+        .sort({ startsAt: 1 })
+        .limit(5)
+        .populate('doctor', 'name clinicName area')
+        .lean(),
+      OrderModel.find({ user: userId, createdAt: { $gte: new Date(now - 7 * 86_400_000) } })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      HealthRecordModel.find({ user: userId, date: { $gte: new Date(now - 30 * 86_400_000) } })
+        .sort({ date: -1 })
+        .limit(3)
+        .lean(),
+      AccessGrantModel.find({
+        user: userId,
+        status: 'active',
+        expiresAt: { $gte: new Date(now), $lte: new Date(now + 7 * 86_400_000) },
+      }).lean(),
     ]);
 
     const items: Notification[] = [];
     for (const a of appointments as any[]) {
-      const when = new Date(a.startsAt).toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+      const when = new Date(a.startsAt).toLocaleString('en-IN', {
+        weekday: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata',
+      });
       if (a.status === 'requested') {
-        items.push({ id: `apt-${a._id}`, icon: 'schedule', title: `Booking requested · ${when}`, body: `Waiting for ${a.doctor?.name ?? 'the clinic'} to confirm`, href: '/account', at: a.startsAt, tone: 'warning' });
+        items.push({
+          id: `apt-${a._id}`,
+          icon: 'schedule',
+          title: `Booking requested · ${when}`,
+          body: `Waiting for ${a.doctor?.name ?? 'the clinic'} to confirm`,
+          href: '/account',
+          at: a.startsAt,
+          tone: 'warning',
+        });
         continue;
       }
-      items.push({ id: `apt-${a._id}`, icon: a.mode === 'video' ? 'videocam' : a.mode === 'audio' ? 'call' : 'event_available', title: `${a.mode === 'video' ? 'Video consult' : a.mode === 'audio' ? 'Phone consultation' : 'Clinic visit'} · ${when}`, body: `${a.doctor?.name ?? 'Your doctor'}${a.mode === 'clinic' && a.doctor?.clinicName ? ` · ${a.doctor.clinicName}, ${a.doctor.area}` : ''}`, href: a.mode === 'clinic' ? '/account' : `/consult/lobby/${a._id}`, at: a.startsAt, tone: 'info' });
+      items.push({
+        id: `apt-${a._id}`,
+        icon: a.mode === 'video' ? 'videocam' : a.mode === 'audio' ? 'call' : 'event_available',
+        title: `${a.mode === 'video' ? 'Video consult' : a.mode === 'audio' ? 'Phone consultation' : 'Clinic visit'} · ${when}`,
+        body: `${a.doctor?.name ?? 'Your doctor'}${a.mode === 'clinic' && a.doctor?.clinicName ? ` · ${a.doctor.clinicName}, ${a.doctor.area}` : ''}`,
+        href: a.mode === 'clinic' ? '/account' : `/consult/lobby/${a._id}`,
+        at: a.startsAt,
+        tone: 'info',
+      });
     }
     for (const o of orders) {
-      const label = o.kind === 'pharmacy' ? `Medicine order ${o.reference}` : `Lab booking ${o.reference}`;
-      items.push({ id: `ord-${o._id}`, icon: o.kind === 'pharmacy' ? 'local_shipping' : 'science', title: o.status === 'cancelled' ? `${label} cancelled` : label, body: `${o.items.length} item${o.items.length === 1 ? '' : 's'} · ₹${o.total.toLocaleString('en-IN')}`, href: `/orders/${o.reference}`, at: o.createdAt!, tone: o.status === 'cancelled' ? 'warning' : 'success' });
+      const label =
+        o.kind === 'pharmacy' ? `Medicine order ${o.reference}` : `Lab booking ${o.reference}`;
+      items.push({
+        id: `ord-${o._id}`,
+        icon: o.kind === 'pharmacy' ? 'local_shipping' : 'science',
+        title: o.status === 'cancelled' ? `${label} cancelled` : label,
+        body: `${o.items.length} item${o.items.length === 1 ? '' : 's'} · ₹${o.total.toLocaleString('en-IN')}`,
+        href: `/orders/${o.reference}`,
+        at: o.createdAt!,
+        tone: o.status === 'cancelled' ? 'warning' : 'success',
+      });
     }
     for (const r of records) {
-      items.push({ id: `rec-${r._id}`, icon: r.kind === 'lab_report' ? 'lab_profile' : 'description', title: r.kind === 'lab_report' ? 'Lab report added' : 'Record added to your locker', body: r.title, href: `/records?record=${r._id}`, at: r.date, tone: 'info' });
+      items.push({
+        id: `rec-${r._id}`,
+        icon: r.kind === 'lab_report' ? 'lab_profile' : 'description',
+        title: r.kind === 'lab_report' ? 'Lab report added' : 'Record added to your locker',
+        body: r.title,
+        href: `/records?record=${r._id}`,
+        at: r.date,
+        tone: 'info',
+      });
     }
     for (const g of grants) {
-      items.push({ id: `grt-${g._id}`, icon: 'shield_person', title: 'Record access expiring soon', body: `${g.grantee?.name ?? "Someone"} · until ${new Date(g.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`, href: '/records/access', at: g.expiresAt, tone: 'warning' });
+      items.push({
+        id: `grt-${g._id}`,
+        icon: 'shield_person',
+        title: 'Record access expiring soon',
+        body: `${g.grantee?.name ?? 'Someone'} · until ${new Date(g.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+        href: '/records/access',
+        at: g.expiresAt,
+        tone: 'warning',
+      });
     }
-    items.sort((a, b) => Math.abs(new Date(a.at).getTime() - now) - Math.abs(new Date(b.at).getTime() - now));
+    items.sort(
+      (a, b) => Math.abs(new Date(a.at).getTime() - now) - Math.abs(new Date(b.at).getTime() - now),
+    );
     return { notifications: items.slice(0, 10) };
   });
 
@@ -134,10 +243,18 @@ export async function meRoutes(app: FastifyInstance) {
   app.get('/summary', async (request) => {
     const userId = request.user.sub;
     const [upcoming, orders, records, grants] = await Promise.all([
-      AppointmentModel.countDocuments({ user: userId, status: { $in: ['confirmed', 'requested'] }, startsAt: { $gte: new Date() } }),
+      AppointmentModel.countDocuments({
+        user: userId,
+        status: { $in: ['confirmed', 'requested'] },
+        startsAt: { $gte: new Date() },
+      }),
       OrderModel.countDocuments({ user: userId, status: { $ne: 'cancelled' } }),
       HealthRecordModel.countDocuments({ user: userId }),
-      AccessGrantModel.countDocuments({ user: userId, status: 'active', expiresAt: { $gte: new Date() } }),
+      AccessGrantModel.countDocuments({
+        user: userId,
+        status: 'active',
+        expiresAt: { $gte: new Date() },
+      }),
     ]);
     return { upcomingAppointments: upcoming, orders, records, activeGrants: grants };
   });

@@ -16,7 +16,10 @@ export async function pharmacyRoutes(app: FastifyInstance) {
   app.get('/medicine-categories', async (_request, reply) => {
     const [categories, counts] = await Promise.all([
       MedicineCategoryModel.find().sort({ order: 1 }).lean(),
-      MedicineModel.aggregate<{ _id: string; count: number }>([{ $unwind: '$categories' }, { $group: { _id: '$categories', count: { $sum: 1 } } }]),
+      MedicineModel.aggregate<{ _id: string; count: number }>([
+        { $unwind: '$categories' },
+        { $group: { _id: '$categories', count: { $sum: 1 } } },
+      ]),
     ]);
     const bySlug = new Map(counts.map((c) => [c._id, c.count]));
     reply.header('cache-control', CATALOGUE_CACHE);
@@ -30,17 +33,40 @@ export async function pharmacyRoutes(app: FastifyInstance) {
     if (rx) filter.rxRequired = rx === 'required';
     if (q) {
       const re = new RegExp(escapeRegex(q), 'i');
-      filter.$or = [{ name: re }, { composition: re }, { subtitle: re }, { manufacturer: re }, { uses: re }];
+      filter.$or = [
+        { name: re },
+        { composition: re },
+        { subtitle: re },
+        { manufacturer: re },
+        { uses: re },
+      ];
     }
 
     // Discount sort needs a computed field, so it goes through an aggregate.
     const sortStage: Record<string, 1 | -1> =
-      sort === 'price_asc' ? { price: 1 } : sort === 'price_desc' ? { price: -1 } : sort === 'rating' ? { rating: -1, reviewCount: -1 } : sort === 'discount' ? { discountPct: -1 } : { popularity: -1 };
+      sort === 'price_asc'
+        ? { price: 1 }
+        : sort === 'price_desc'
+          ? { price: -1 }
+          : sort === 'rating'
+            ? { rating: -1, reviewCount: -1 }
+            : sort === 'discount'
+              ? { discountPct: -1 }
+              : { popularity: -1 };
 
     const [items, total] = await Promise.all([
       MedicineModel.aggregate([
         { $match: filter },
-        { $addFields: { discountPct: { $round: [{ $multiply: [{ $divide: [{ $subtract: ['$mrp', '$price'] }, '$mrp'] }, 100] }, 0] } } },
+        {
+          $addFields: {
+            discountPct: {
+              $round: [
+                { $multiply: [{ $divide: [{ $subtract: ['$mrp', '$price'] }, '$mrp'] }, 100] },
+                0,
+              ],
+            },
+          },
+        },
         { $sort: { ...sortStage, _id: 1 } },
         { $skip: (page - 1) * limit },
         { $limit: limit },
@@ -50,7 +76,12 @@ export async function pharmacyRoutes(app: FastifyInstance) {
     ]);
 
     reply.header('cache-control', CATALOGUE_CACHE);
-    return paged(items.map((m) => toDto(m)), total, page, limit);
+    return paged(
+      items.map((m) => toDto(m)),
+      total,
+      page,
+      limit,
+    );
   });
 
   app.get('/medicines/:slug', async (request, reply) => {
@@ -60,8 +91,13 @@ export async function pharmacyRoutes(app: FastifyInstance) {
 
     // Same composition first (substitutes), then same category.
     const [substitutes, similar] = await Promise.all([
-      MedicineModel.find({ slug: { $ne: slug }, composition: medicine.composition }).limit(4).lean(),
-      MedicineModel.find({ slug: { $ne: slug }, categories: { $in: medicine.categories } }).sort({ popularity: -1 }).limit(8).lean(),
+      MedicineModel.find({ slug: { $ne: slug }, composition: medicine.composition })
+        .limit(4)
+        .lean(),
+      MedicineModel.find({ slug: { $ne: slug }, categories: { $in: medicine.categories } })
+        .sort({ popularity: -1 })
+        .limit(8)
+        .lean(),
     ]);
 
     reply.header('cache-control', CATALOGUE_CACHE);

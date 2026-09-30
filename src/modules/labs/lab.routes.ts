@@ -5,20 +5,35 @@ import { CATALOGUE_CACHE, escapeRegex, pageQuery, paged, toDto } from '../../lib
 import { LabCategoryModel, LabTestModel } from '../../models/lab-test.model.js';
 import { LabModel } from '../../models/lab.model.js';
 import { distanceKm, locate } from '../../lib/geo.js';
-import { DEFAULT_LAB, collectionAvailability, eligibleLabs, fit, loadLabs, origin, visitOnly } from './lab-network.js';
+import {
+  DEFAULT_LAB,
+  collectionAvailability,
+  eligibleLabs,
+  fit,
+  loadLabs,
+  origin,
+  visitOnly,
+} from './lab-network.js';
 import { cities as allCities } from '../../lib/catalogue-store.js';
 
 const listQuery = z.object({
   category: z.string().trim().min(1).optional(),
   kind: z.enum(['package', 'test', 'scan', 'procedure']).optional(),
   department: z.string().trim().min(1).optional(),
-  homeCollection: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  homeCollection: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   q: z.string().trim().min(1).optional(),
   sort: z.enum(['popular', 'price_asc', 'price_desc', 'discount']).default('popular'),
   ...pageQuery,
 });
 
-const pincodeParam = z.string().regex(/^\d{6}$/).optional().catch(undefined);
+const pincodeParam = z
+  .string()
+  .regex(/^\d{6}$/)
+  .optional()
+  .catch(undefined);
 
 const labListQuery = z.object({
   city: z.string().default('bangalore'),
@@ -27,8 +42,14 @@ const labListQuery = z.object({
   q: z.string().trim().min(1).optional(),
   test: z.string().trim().min(1).optional(),
   accreditation: z.enum(['NABL', 'CAP', 'ISO 15189']).optional(),
-  homeCollection: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  walkIn: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  homeCollection: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  walkIn: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   sort: z.enum(['distance', 'rating', 'reviews']).default('distance'),
   ...pageQuery,
   limit: z.coerce.number().int().min(1).max(60).default(24),
@@ -61,7 +82,12 @@ const labCard = (lab: Awaited<ReturnType<typeof loadLabs>>[number]) => ({
   photoUrl: lab.photoUrl,
 });
 
-const SORTS = { popular: { popularity: -1 }, price_asc: { price: 1 }, price_desc: { price: -1 }, discount: { discount: -1 } } as const;
+const SORTS = {
+  popular: { popularity: -1 },
+  price_asc: { price: 1 },
+  price_desc: { price: -1 },
+  discount: { discount: -1 },
+} as const;
 
 export async function labRoutes(app: FastifyInstance) {
   app.get('/lab-categories', async (_request, reply) => {
@@ -69,7 +95,13 @@ export async function labRoutes(app: FastifyInstance) {
       LabCategoryModel.find().sort({ order: 1 }).lean(),
       LabTestModel.aggregate<{ _id: string; packages: number; tests: number }>([
         { $unwind: '$categories' },
-        { $group: { _id: '$categories', packages: { $sum: { $cond: [{ $eq: ['$kind', 'package'] }, 1, 0] } }, tests: { $sum: { $cond: [{ $ne: ['$kind', 'package'] }, 1, 0] } } } },
+        {
+          $group: {
+            _id: '$categories',
+            packages: { $sum: { $cond: [{ $eq: ['$kind', 'package'] }, 1, 0] } },
+            tests: { $sum: { $cond: [{ $ne: ['$kind', 'package'] }, 1, 0] } },
+          },
+        },
       ]),
     ]);
     const bySlug = new Map(counts.map((c) => [c._id, c]));
@@ -83,36 +115,62 @@ export async function labRoutes(app: FastifyInstance) {
   });
 
   app.get('/lab-tests', async (request, reply) => {
-    const { category, kind, department, homeCollection, q, sort, page, limit } = listQuery.parse(request.query);
+    const { category, kind, department, homeCollection, q, sort, page, limit } = listQuery.parse(
+      request.query,
+    );
     const filter: Record<string, unknown> = {};
     if (category) filter.categories = category;
     if (kind) filter.kind = kind;
     if (department) filter.department = department;
-    if (homeCollection !== undefined) filter.homeCollection = homeCollection ? { $ne: false } : false;
+    if (homeCollection !== undefined)
+      filter.homeCollection = homeCollection ? { $ne: false } : false;
     if (q) {
       const re = new RegExp(escapeRegex(q), 'i');
-      filter.$or = [{ name: re }, { covers: re }, { highlights: re }, { 'parameterGroups.parameters': re }, { 'parameterGroups.name': re }];
+      filter.$or = [
+        { name: re },
+        { covers: re },
+        { highlights: re },
+        { 'parameterGroups.parameters': re },
+        { 'parameterGroups.name': re },
+      ];
     }
     const [items, total] = await Promise.all([
-      LabTestModel.find(filter).sort({ ...SORTS[sort], _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+      LabTestModel.find(filter)
+        .sort({ ...SORTS[sort], _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
       LabTestModel.countDocuments(filter),
     ]);
     reply.header('cache-control', CATALOGUE_CACHE);
-    return paged(items.map((t) => toDto(t)), total, page, limit);
+    return paged(
+      items.map((t) => toDto(t)),
+      total,
+      page,
+      limit,
+    );
   });
 
   app.get('/lab-tests/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
-    const { pincode, city } = z.object({ pincode: pincodeParam, city: z.string().optional() }).parse(request.query);
+    const { pincode, city } = z
+      .object({ pincode: pincodeParam, city: z.string().optional() })
+      .parse(request.query);
     const test = await LabTestModel.findOne({ slug }).lean();
     if (!test) throw notFound('Test not found');
     // Where this test can be done, nearest first.
     const place = origin(pincode, city);
     const [related, labs] = await Promise.all([
-      LabTestModel.find({ slug: { $ne: slug }, categories: { $in: test.categories } }).sort({ popularity: -1 }).limit(4).lean(),
+      LabTestModel.find({ slug: { $ne: slug }, categories: { $in: test.categories } })
+        .sort({ popularity: -1 })
+        .limit(4)
+        .lean(),
       loadLabs(place.city),
     ]);
-    const offering = labs.filter((l) => l.tests.includes(slug)).map((l) => ({ lab: l, ...fit(l, place, [slug]) })).sort((a, b) => a.distanceKm - b.distanceKm);
+    const offering = labs
+      .filter((l) => l.tests.includes(slug))
+      .map((l) => ({ lab: l, ...fit(l, place, [slug]) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
     const nearest = offering.find((l) => l.canCollect) ?? offering[0];
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
@@ -121,7 +179,13 @@ export async function labRoutes(app: FastifyInstance) {
       availability: {
         labCount: offering.length,
         near: { pincode: place.pincode, area: place.area, city: place.city },
-        nearest: nearest ? { ...labCard(nearest.lab), distanceKm: nearest.distanceKm, canCollect: nearest.canCollect && test.homeCollection !== false } : null,
+        nearest: nearest
+          ? {
+              ...labCard(nearest.lab),
+              distanceKm: nearest.distanceKm,
+              canCollect: nearest.canCollect && test.homeCollection !== false,
+            }
+          : null,
       },
     };
   });
@@ -132,28 +196,60 @@ export async function labRoutes(app: FastifyInstance) {
     const q = labListQuery.parse(request.query);
     // A pincode from another city shouldn't measure distances to this city's labs.
     const located = origin(q.pincode, q.city);
-    const place = located.city === (allCities().find((c) => c.slug === q.city || c.aliases.includes(q.city))?.slug ?? q.city) ? located : origin(undefined, q.city);
+    const place =
+      located.city ===
+      (allCities().find((c) => c.slug === q.city || c.aliases.includes(q.city))?.slug ?? q.city)
+        ? located
+        : origin(undefined, q.city);
     const all = await loadLabs(q.city);
     const needle = q.q?.toLowerCase();
     const rows = all
       .map((lab) => ({ lab, ...fit(lab, place, q.test ? [q.test] : []) }))
-      .filter(({ lab, offersAll, canCollect }) =>
-        (!q.area || lab.area === q.area) &&
-        (!q.test || offersAll) &&
-        (!q.accreditation || lab.accreditations.includes(q.accreditation)) &&
-        (!q.homeCollection || canCollect) &&
-        (!q.walkIn || lab.walkIn) &&
-        (!needle || [lab.name, lab.area, lab.address, lab.tagline].some((f) => f?.toLowerCase().includes(needle))),
+      .filter(
+        ({ lab, offersAll, canCollect }) =>
+          (!q.area || lab.area === q.area) &&
+          (!q.test || offersAll) &&
+          (!q.accreditation || lab.accreditations.includes(q.accreditation)) &&
+          (!q.homeCollection || canCollect) &&
+          (!q.walkIn || lab.walkIn) &&
+          (!needle ||
+            [lab.name, lab.area, lab.address, lab.tagline].some((f) =>
+              f?.toLowerCase().includes(needle),
+            )),
       )
       // Admin-ranked labs lead the default (distance) order.
-      .sort((a, b) => (q.sort === 'rating' ? b.lab.rating - a.lab.rating : q.sort === 'reviews' ? b.lab.reviewCount - a.lab.reviewCount : (b.lab.rankScore ?? 0) - (a.lab.rankScore ?? 0) || a.distanceKm - b.distanceKm));
+      .sort((a, b) =>
+        q.sort === 'rating'
+          ? b.lab.rating - a.lab.rating
+          : q.sort === 'reviews'
+            ? b.lab.reviewCount - a.lab.reviewCount
+            : (b.lab.rankScore ?? 0) - (a.lab.rankScore ?? 0) || a.distanceKm - b.distanceKm,
+      );
 
-    const count = (values: string[]) => [...values.reduce((m, v) => m.set(v, (m.get(v) ?? 0) + 1), new Map<string, number>())].map(([value, n]) => ({ value, count: n })).sort((a, b) => a.value.localeCompare(b.value));
+    const count = (values: string[]) =>
+      [...values.reduce((m, v) => m.set(v, (m.get(v) ?? 0) + 1), new Map<string, number>())]
+        .map(([value, n]) => ({ value, count: n }))
+        .sort((a, b) => a.value.localeCompare(b.value));
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
-      ...paged(rows.slice((q.page - 1) * q.limit, q.page * q.limit).map((r) => ({ ...labCard(r.lab), distanceKm: r.distanceKm, canCollect: r.canCollect })), rows.length, q.page, q.limit),
-      near: { pincode: place.pincode, area: place.area, approximate: place.approximate, city: place.city },
-      facets: { areas: count(all.map((l) => l.area)), accreditations: count(all.flatMap((l) => l.accreditations)) },
+      ...paged(
+        rows
+          .slice((q.page - 1) * q.limit, q.page * q.limit)
+          .map((r) => ({ ...labCard(r.lab), distanceKm: r.distanceKm, canCollect: r.canCollect })),
+        rows.length,
+        q.page,
+        q.limit,
+      ),
+      near: {
+        pincode: place.pincode,
+        area: place.area,
+        approximate: place.approximate,
+        city: place.city,
+      },
+      facets: {
+        areas: count(all.map((l) => l.area)),
+        accreditations: count(all.flatMap((l) => l.accreditations)),
+      },
     };
   });
 
@@ -163,25 +259,51 @@ export async function labRoutes(app: FastifyInstance) {
       .object({
         pincode: z.string().trim().optional(),
         city: z.string().default('bangalore'),
-        tests: z.string().default('').transform((s) => s.split(',').map((t) => t.trim()).filter(Boolean)),
+        tests: z
+          .string()
+          .default('')
+          .transform((s) =>
+            s
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean),
+          ),
         mode: z.enum(['home', 'lab']).default('home'),
       })
       .parse(request.query);
     const place = pincode ? locate(pincode) : null;
     const from = place ?? origin(undefined, city);
-    const [labs, testDocs] = await Promise.all([loadLabs(from.city), LabTestModel.find({ slug: { $in: tests } }, { slug: 1, name: 1, homeCollection: 1 }).lean()]);
+    const [labs, testDocs] = await Promise.all([
+      loadLabs(from.city),
+      LabTestModel.find({ slug: { $in: tests } }, { slug: 1, name: 1, homeCollection: 1 }).lean(),
+    ]);
     const atCentre = visitOnly(testDocs);
-    const ranked = labs.map((lab) => ({ lab, ...fit(lab, from, tests) })).sort((a, b) => a.distanceKm - b.distanceKm);
-    const eligible = (place || mode === 'lab') && !(mode === 'home' && atCentre.length) ? eligibleLabs(labs, from, tests, mode) : [];
+    const ranked = labs
+      .map((lab) => ({ lab, ...fit(lab, from, tests) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+    const eligible =
+      (place || mode === 'lab') && !(mode === 'home' && atCentre.length)
+        ? eligibleLabs(labs, from, tests, mode)
+        : [];
 
     let reason: string | null = null;
-    if (mode === 'home' && atCentre.length) reason = `${atCentre.map((t) => t.name).join(', ')} ${atCentre.length > 1 ? 'need' : 'needs'} a visit to the centre — it can’t be done at home. Choose “Visit a lab” to book it.`;
-    else if (mode === 'home' && pincode && !place) reason = `Home collection isn’t available at ${pincode} yet — we cover ${allCities().length} cities including Bengaluru, Mumbai, Delhi, Hyderabad and Chennai. You can visit a partner lab instead.`;
-    else if (mode === 'home' && place && !eligible.length) reason = `No partner lab collects at ${place.area} (${place.pincode}) for all the tests in this booking. Visit a lab, or remove the specialised test.`;
+    if (mode === 'home' && atCentre.length)
+      reason = `${atCentre.map((t) => t.name).join(', ')} ${atCentre.length > 1 ? 'need' : 'needs'} a visit to the centre — it can’t be done at home. Choose “Visit a lab” to book it.`;
+    else if (mode === 'home' && pincode && !place)
+      reason = `Home collection isn’t available at ${pincode} yet — we cover ${allCities().length} cities including Bengaluru, Mumbai, Delhi, Hyderabad and Chennai. You can visit a partner lab instead.`;
+    else if (mode === 'home' && place && !eligible.length)
+      reason = `No partner lab collects at ${place.area} (${place.pincode}) for all the tests in this booking. Visit a lab, or remove the specialised test.`;
 
     reply.header('cache-control', 'no-store');
     return {
-      place: place ? { pincode: place.pincode, area: place.area, approximate: place.approximate, city: place.city } : null,
+      place: place
+        ? {
+            pincode: place.pincode,
+            area: place.area,
+            approximate: place.approximate,
+            city: place.city,
+          }
+        : null,
       serviceable: eligible.length > 0,
       visitOnly: atCentre.map((t) => t.slug),
       reason,
@@ -204,10 +326,21 @@ export async function labRoutes(app: FastifyInstance) {
     const lab = await LabModel.findOne({ slug }).lean();
     if (!lab) throw notFound('Lab not found');
     const place = origin(pincode);
-    const [tests, others] = await Promise.all([LabTestModel.find({ slug: { $in: lab.tests } }).sort({ kind: -1, popularity: -1 }).lean(), loadLabs(lab.city)]);
+    const [tests, others] = await Promise.all([
+      LabTestModel.find({ slug: { $in: lab.tests } })
+        .sort({ kind: -1, popularity: -1 })
+        .lean(),
+      loadLabs(lab.city),
+    ]);
     const nearby = others
       .filter((l) => l.slug !== slug)
-      .map((l) => ({ ...labCard(l), distanceKm: distanceKm(lab.geo as { lat: number; lng: number }, l.geo as { lat: number; lng: number }) }))
+      .map((l) => ({
+        ...labCard(l),
+        distanceKm: distanceKm(
+          lab.geo as { lat: number; lng: number },
+          l.geo as { lat: number; lng: number },
+        ),
+      }))
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .slice(0, 3);
     reply.header('cache-control', CATALOGUE_CACHE);
@@ -220,7 +353,12 @@ export async function labRoutes(app: FastifyInstance) {
   });
 
   app.get('/lab-collection-slots', async (request, reply) => {
-    const { lab: slug, mode } = z.object({ lab: z.string().default(DEFAULT_LAB), mode: z.enum(['home', 'lab']).default('home') }).parse(request.query);
+    const { lab: slug, mode } = z
+      .object({
+        lab: z.string().default(DEFAULT_LAB),
+        mode: z.enum(['home', 'lab']).default('home'),
+      })
+      .parse(request.query);
     const lab = await LabModel.findOne({ slug }).lean();
     if (!lab) throw notFound('Lab not found');
     reply.header('cache-control', 'no-store');

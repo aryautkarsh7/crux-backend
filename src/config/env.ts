@@ -8,7 +8,10 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   MONGODB_URI: z.string().optional(),
   /** Database name for the local development/test MongoDB. */
-  MONGODB_DB: z.string().regex(/^[a-z0-9_]+$/i).default('curxx'),
+  MONGODB_DB: z
+    .string()
+    .regex(/^[a-z0-9_]+$/i)
+    .default('curxx'),
   MONGODB_PORT: z.coerce.number().int().min(1).max(65_535).default(27017),
   MONGODB_DATA_PATH: z.string().min(1).default('.data/mongo'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
@@ -33,14 +36,31 @@ function adminLogin() {
   const strip = (v?: string) => v?.trim().replace(/^(['"])(.*)\1$/, '$2');
   const email = strip(process.env.ADMIN_EMAIL);
   const password = strip(process.env.ADMIN_PASSWORD);
-  if (!email && !password) return { ADMIN_EMAIL: undefined, ADMIN_PASSWORD: undefined, adminProblem: 'Set ADMIN_EMAIL and ADMIN_PASSWORD on the server.' };
+  if (!email && !password)
+    return {
+      ADMIN_EMAIL: undefined,
+      ADMIN_PASSWORD: undefined,
+      adminProblem: 'Set ADMIN_EMAIL and ADMIN_PASSWORD on the server.',
+    };
   const problems = [
-    !email ? 'ADMIN_EMAIL is missing' : !z.string().email().safeParse(email).success ? 'ADMIN_EMAIL is not a valid email address' : '',
-    !password ? 'ADMIN_PASSWORD is missing' : password.length < 10 ? 'ADMIN_PASSWORD must be at least 10 characters' : '',
+    !email
+      ? 'ADMIN_EMAIL is missing'
+      : !z.string().email().safeParse(email).success
+        ? 'ADMIN_EMAIL is not a valid email address'
+        : '',
+    !password
+      ? 'ADMIN_PASSWORD is missing'
+      : password.length < 10
+        ? 'ADMIN_PASSWORD must be at least 10 characters'
+        : '',
   ].filter(Boolean);
   if (problems.length) {
     console.warn(`Admin sign-in disabled: ${problems.join('; ')}`);
-    return { ADMIN_EMAIL: undefined, ADMIN_PASSWORD: undefined, adminProblem: `${problems.join('; ')}. Fix the variable on the server.` };
+    return {
+      ADMIN_EMAIL: undefined,
+      ADMIN_PASSWORD: undefined,
+      adminProblem: `${problems.join('; ')}. Fix the variable on the server.`,
+    };
   }
   return { ADMIN_EMAIL: email, ADMIN_PASSWORD: password, adminProblem: '' };
 }
@@ -54,8 +74,15 @@ export type NotifyMode = 'log' | 'test' | 'live';
  *   doctors). Defaults to test, and live only counts when NODE_ENV=production.
  */
 function bookingRequests() {
-  const flag = (v?: string) => ['1', 'true', 'yes'].includes(String(v ?? '').trim().toLowerCase());
-  const wanted = String(process.env.NOTIFY_MODE ?? 'test').trim().toLowerCase();
+  const flag = (v?: string) =>
+    ['1', 'true', 'yes'].includes(
+      String(v ?? '')
+        .trim()
+        .toLowerCase(),
+    );
+  const wanted = String(process.env.NOTIFY_MODE ?? 'test')
+    .trim()
+    .toLowerCase();
   let notifyMode: NotifyMode = 'test';
   if (wanted === 'log' || wanted === 'test') notifyMode = wanted;
   else if (wanted === 'live') {
@@ -94,11 +121,20 @@ function doctarSettings() {
     return Number.isFinite(n) && v?.trim() ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
   };
   const url = process.env.DOCTAR_DB_URL?.trim() || undefined;
-  const flag = (v?: string) => ['1', 'true', 'yes'].includes(String(v ?? '').trim().toLowerCase());
+  const flag = (v?: string) =>
+    ['1', 'true', 'yes'].includes(
+      String(v ?? '')
+        .trim()
+        .toLowerCase(),
+    );
   return {
     DOCTAR_DB_URL: url,
     /** On when DOCTAR_DB_URL is set, unless DOCTAR_ENABLED=false. */
-    DOCTAR_ENABLED: Boolean(url) && String(process.env.DOCTAR_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+    DOCTAR_ENABLED:
+      Boolean(url) &&
+      String(process.env.DOCTAR_ENABLED ?? 'true')
+        .trim()
+        .toLowerCase() !== 'false',
     /** Only Doctar's admin-verified doctors (default: all doctors in Curxx's cities and specialties). */
     DOCTAR_VERIFIED_ONLY: flag(process.env.DOCTAR_VERIFIED_ONLY),
     /** Full rebuild of the listing index; Doctar has no updatedAt index yet, so no incremental refresh. */
@@ -123,8 +159,17 @@ export const env = {
    * The generated seed doctors, facilities, reviews and testimonials (see lib/sample-data.ts). Off by
    * default: the website then only shows imported and admin-added records. Tests and demos turn it on.
    */
-  SHOW_SAMPLE_DATA: ['1', 'true', 'yes'].includes(String(process.env.SHOW_SAMPLE_DATA ?? '').trim().toLowerCase()),
+  SHOW_SAMPLE_DATA: ['1', 'true', 'yes'].includes(
+    String(process.env.SHOW_SAMPLE_DATA ?? '')
+      .trim()
+      .toLowerCase(),
+  ),
   isProduction: parsed.data.NODE_ENV === 'production',
   // The Angular admin panel runs on :4200 in development.
-  corsOrigins: [...parsed.data.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean), ...(parsed.data.NODE_ENV === 'production' ? [] : ['http://localhost:4200'])],
+  corsOrigins: [
+    ...parsed.data.CORS_ORIGIN.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+    ...(parsed.data.NODE_ENV === 'production' ? [] : ['http://localhost:4200']),
+  ],
 };

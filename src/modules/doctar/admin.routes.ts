@@ -7,7 +7,14 @@ import { z } from 'zod';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
 import { matches, sortBy } from '../../lib/query-match.js';
-import { directoryEnabled, directoryIndex, directoryStatus, liveDirectory, refreshDirectory, refreshOverlays } from './directory.js';
+import {
+  directoryEnabled,
+  directoryIndex,
+  directoryStatus,
+  liveDirectory,
+  refreshDirectory,
+  refreshOverlays,
+} from './directory.js';
 import { DoctarOverlayModel } from './models.js';
 
 type Doc = Record<string, any>;
@@ -19,24 +26,57 @@ const overlayBody = z
     featured: z.boolean(),
     hidden: z.boolean(),
     bookable: z.boolean(),
-    phone: z.string().trim().max(20).regex(/^[0-9+\s-]*$/, 'Phone: digits, spaces, + and - only'),
-    whatsapp: z.string().trim().max(20).regex(/^[0-9+\s-]*$/, 'WhatsApp: digits, spaces, + and - only'),
-    photoUrl: z.string().trim().max(500).refine((v) => !v || /^https:\/\//.test(v), 'Photo URL must start with https://'),
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .regex(/^[0-9+\s-]*$/, 'Phone: digits, spaces, + and - only'),
+    whatsapp: z
+      .string()
+      .trim()
+      .max(20)
+      .regex(/^[0-9+\s-]*$/, 'WhatsApp: digits, spaces, + and - only'),
+    photoUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .refine((v) => !v || /^https:\/\//.test(v), 'Photo URL must start with https://'),
     note: z.string().trim().max(500),
   })
   .partial()
   .strict();
 
-const LIST_FIELDS = ['doctarId', 'slug', 'name', 'city', 'area', 'specialty', 'category', 'type', 'clinicName', 'qualification', 'experienceYears', 'fee', 'doctarVerified', 'phone'];
-const pick = (d: Doc) => Object.fromEntries(LIST_FIELDS.filter((k) => d[k] !== undefined).map((k) => [k, d[k]]));
+const LIST_FIELDS = [
+  'doctarId',
+  'slug',
+  'name',
+  'city',
+  'area',
+  'specialty',
+  'category',
+  'type',
+  'clinicName',
+  'qualification',
+  'experienceYears',
+  'fee',
+  'doctarVerified',
+  'phone',
+];
+const pick = (d: Doc) =>
+  Object.fromEntries(LIST_FIELDS.filter((k) => d[k] !== undefined).map((k) => [k, d[k]]));
 
 export async function doctarAdminRoutes(app: FastifyInstance) {
   /** Whether the directory is on, when it was last built, how many records it holds, and why records were skipped. */
-  app.get('/doctar/status', async () => ({ enabled: directoryEnabled(), overlays: await DoctarOverlayModel.estimatedDocumentCount(), ...directoryStatus() }));
+  app.get('/doctar/status', async () => ({
+    enabled: directoryEnabled(),
+    overlays: await DoctarOverlayModel.estimatedDocumentCount(),
+    ...directoryStatus(),
+  }));
 
   /** Rebuild from Doctar now (runs in the background; the website keeps the current copy until it's done). */
   app.post('/doctar/refresh', async () => {
-    if (!directoryEnabled()) throw badRequest('The Doctar directory is off (DOCTAR_DB_URL not set)', 'directory_off');
+    if (!directoryEnabled())
+      throw badRequest('The Doctar directory is off (DOCTAR_DB_URL not set)', 'directory_off');
     void refreshDirectory().catch(() => {});
     return { started: true, ...directoryStatus() };
   });
@@ -62,7 +102,13 @@ export async function doctarAdminRoutes(app: FastifyInstance) {
     if (q.specialty) filter[kind === 'doctors' ? 'specialty' : 'specialties'] = q.specialty;
     if (q.q) {
       const re = new RegExp(escapeRegex(q.q), 'i');
-      filter.$or = [{ name: re }, { slug: re }, { doctarId: q.q }, { clinicName: re }, { area: re }];
+      filter.$or = [
+        { name: re },
+        { slug: re },
+        { doctarId: q.q },
+        { clinicName: re },
+        { area: re },
+      ];
     }
     const all: Doc[] = directoryIndex()?.[kind] ?? [];
     let rows = all.filter((d) => matches(d, filter));
@@ -77,14 +123,24 @@ export async function doctarAdminRoutes(app: FastifyInstance) {
       liveSlug: liveSlug.get(String(d.doctarId)) ?? '',
       overlay: byId.get(String(d.doctarId)) ?? null,
     }));
-    return { items, total: rows.length, page: q.page, limit: q.limit, pages: Math.max(1, Math.ceil(rows.length / q.limit)) };
+    return {
+      items,
+      total: rows.length,
+      page: q.page,
+      limit: q.limit,
+      pages: Math.max(1, Math.ceil(rows.length / q.limit)),
+    };
   });
 
   /** Saves the team's settings for one Doctar record and applies them to the website. */
   app.put('/doctar/overlays/:kind/:doctarId', async (request) => {
-    const { kind, doctarId } = z.object({ kind: KIND, doctarId: z.string().regex(/^[a-f0-9]{24}$/) }).parse(request.params);
+    const { kind, doctarId } = z
+      .object({ kind: KIND, doctarId: z.string().regex(/^[a-f0-9]{24}$/) })
+      .parse(request.params);
     const body = overlayBody.parse(request.body ?? {});
-    const record = (directoryIndex()?.[kind === 'doctor' ? 'doctors' : 'facilities'] as Doc[] | undefined)?.find((d) => String(d.doctarId) === doctarId);
+    const record = (
+      directoryIndex()?.[kind === 'doctor' ? 'doctors' : 'facilities'] as Doc[] | undefined
+    )?.find((d) => String(d.doctarId) === doctarId);
     if (!record) throw notFound('No such Doctar record in the directory');
     const overlay = await DoctarOverlayModel.findOneAndUpdate(
       { kind, doctarId },

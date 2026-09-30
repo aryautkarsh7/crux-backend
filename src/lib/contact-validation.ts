@@ -4,7 +4,13 @@
  */
 
 /** Numbers Doctar fills in when it has none, and classic dummy numbers. */
-const PLACEHOLDER_PHONES = new Set(['8877772277', '9876543210', '1234567890', '9999999999', '9000000000']);
+const PLACEHOLDER_PHONES = new Set([
+  '8877772277',
+  '9876543210',
+  '1234567890',
+  '9999999999',
+  '9000000000',
+]);
 
 /** A 10-digit Indian mobile that can receive an SMS, or '' (landlines, placeholders and junk are dropped). */
 export function mobileOf(raw: unknown): string {
@@ -20,22 +26,29 @@ export function mobileOf(raw: unknown): string {
 export function phoneOf(raw: unknown): string {
   const mobile = mobileOf(raw);
   if (mobile) return mobile;
-  const digits = String(raw ?? '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const digits = String(raw ?? '')
+    .replace(/\D/g, '')
+    .replace(/^91(?=\d{10}$)/, '');
   if (digits.length < 10 || digits.length > 12 || /^(\d)\1+$/.test(digits)) return '';
   return PLACEHOLDER_PHONES.has(digits.slice(-10)) ? '' : digits;
 }
 
-const DUMMY_DOMAINS = /(^|\.)(example\.(com|org|net)|test\.com|mailinator\.com|yopmail\.com|tempmail\.[a-z]+|guerrillamail\.[a-z]+|sharklasers\.com|trashmail\.[a-z]+|fake\.com|none\.com)$/;
-const DUMMY_LOCALS = /^(test|testing|demo|dummy|sample|fake|na|n\.a|none|null|nil|noreply|no-reply|donotreply|abc|xyz|asdf|qwerty|user|email|mail)\d*$/;
+const DUMMY_DOMAINS =
+  /(^|\.)(example\.(com|org|net)|test\.com|mailinator\.com|yopmail\.com|tempmail\.[a-z]+|guerrillamail\.[a-z]+|sharklasers\.com|trashmail\.[a-z]+|fake\.com|none\.com)$/;
+const DUMMY_LOCALS =
+  /^(test|testing|demo|dummy|sample|fake|na|n\.a|none|null|nil|noreply|no-reply|donotreply|abc|xyz|asdf|qwerty|user|email|mail)\d*$/;
 const RESERVED_TLDS = /\.(local|localhost|test|invalid|example)$/;
 
 /** A plausible, non-dummy email address (lower-cased), or ''. */
 export function emailOf(raw: unknown): string {
-  const email = String(raw ?? '').trim().toLowerCase();
+  const email = String(raw ?? '')
+    .trim()
+    .toLowerCase();
   const m = /^([a-z0-9._%+-]{1,64})@([a-z0-9-]+(\.[a-z0-9-]+)+)$/.exec(email);
   if (!m) return '';
   const [, local, domain] = m;
-  if (DUMMY_LOCALS.test(local!) || DUMMY_DOMAINS.test(domain!) || RESERVED_TLDS.test(domain!)) return '';
+  if (DUMMY_LOCALS.test(local!) || DUMMY_DOMAINS.test(domain!) || RESERVED_TLDS.test(domain!))
+    return '';
   return email;
 }
 

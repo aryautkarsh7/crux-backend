@@ -31,27 +31,27 @@ database name and local data directory default from that port and can also be ov
 
 ## Endpoints
 
-| Method | Path | Auth | Purpose |
-|---|---|---|---|
-| GET | `/health` | – | Liveness probe |
-| POST | `/api/v1/auth/otp/request` | – | Send a login code (returns `devCode` outside production) |
-| POST | `/api/v1/auth/otp/verify` | – | Exchange the code for a 30-day JWT |
-| GET | `/api/v1/auth/me` | Bearer | Current account |
-| PATCH | `/api/v1/auth/me` | Bearer | Update name / ABHA id |
-| GET | `/api/v1/specialties` | – | Specialty list |
-| GET | `/api/v1/doctors` | – | Filter by `city`, `specialty`, `q`, `maxFee`, `minExperience`; `sort`, `page`, `limit` |
-| GET | `/api/v1/doctors/:slug` | – | One doctor |
-| GET | `/api/v1/doctors/:slug/slots` | – | Open slots, filter by `mode` and `days` |
-| POST | `/api/v1/slots/:id/hold` | Bearer | Reserve a slot for 8 minutes |
-| POST | `/api/v1/appointments` | Bearer | Book a held or open slot |
-| GET | `/api/v1/appointments` | Bearer | Your appointments |
-| PATCH | `/api/v1/appointments/:id/cancel` | Bearer | Cancel and release the slot |
-| GET | `/api/v1/site/settings` | – | Editable claims, links and images, by key |
-| GET | `/api/v1/site/stats` | – | Live counts (doctors, clinics, NABH, labs, tests, cities, average rating…) |
-| GET | `/api/v1/content/:page[,page]` | – | Editable page sections (FAQs, bands, cards, legal copy), keyed `page/section` |
-| GET | `/api/v1/testimonials?audience=patient\|provider` | – | Published testimonials |
-| GET | `/api/v1/plans?audience=plus\|provider` | – | Curxx Plus and provider plans |
-| GET | `/api/v1/catalogue/routing` | – | Cities, specialties, conditions, surgeries, facility types for website routing |
+| Method | Path                                              | Auth   | Purpose                                                                                |
+| ------ | ------------------------------------------------- | ------ | -------------------------------------------------------------------------------------- |
+| GET    | `/health`                                         | –      | Liveness probe                                                                         |
+| POST   | `/api/v1/auth/otp/request`                        | –      | Send a login code (returns `devCode` outside production)                               |
+| POST   | `/api/v1/auth/otp/verify`                         | –      | Exchange the code for a 30-day JWT                                                     |
+| GET    | `/api/v1/auth/me`                                 | Bearer | Current account                                                                        |
+| PATCH  | `/api/v1/auth/me`                                 | Bearer | Update name / ABHA id                                                                  |
+| GET    | `/api/v1/specialties`                             | –      | Specialty list                                                                         |
+| GET    | `/api/v1/doctors`                                 | –      | Filter by `city`, `specialty`, `q`, `maxFee`, `minExperience`; `sort`, `page`, `limit` |
+| GET    | `/api/v1/doctors/:slug`                           | –      | One doctor                                                                             |
+| GET    | `/api/v1/doctors/:slug/slots`                     | –      | Open slots, filter by `mode` and `days`                                                |
+| POST   | `/api/v1/slots/:id/hold`                          | Bearer | Reserve a slot for 8 minutes                                                           |
+| POST   | `/api/v1/appointments`                            | Bearer | Book a held or open slot                                                               |
+| GET    | `/api/v1/appointments`                            | Bearer | Your appointments                                                                      |
+| PATCH  | `/api/v1/appointments/:id/cancel`                 | Bearer | Cancel and release the slot                                                            |
+| GET    | `/api/v1/site/settings`                           | –      | Editable claims, links and images, by key                                              |
+| GET    | `/api/v1/site/stats`                              | –      | Live counts (doctors, clinics, NABH, labs, tests, cities, average rating…)             |
+| GET    | `/api/v1/content/:page[,page]`                    | –      | Editable page sections (FAQs, bands, cards, legal copy), keyed `page/section`          |
+| GET    | `/api/v1/testimonials?audience=patient\|provider` | –      | Published testimonials                                                                 |
+| GET    | `/api/v1/plans?audience=plus\|provider`           | –      | Curxx Plus and provider plans                                                          |
+| GET    | `/api/v1/catalogue/routing`                       | –      | Cities, specialties, conditions, surgeries, facility types for website routing         |
 
 ## Editable website data
 

@@ -9,7 +9,10 @@ let memoryServer: { stop: () => Promise<boolean> } | undefined;
 function localMongoIsUp(): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ host: '127.0.0.1', port: env.MONGODB_PORT });
-    const done = (up: boolean) => { socket.destroy(); resolve(up); };
+    const done = (up: boolean) => {
+      socket.destroy();
+      resolve(up);
+    };
     socket.setTimeout(400);
     socket.once('connect', () => done(true));
     socket.once('timeout', () => done(false));
@@ -33,7 +36,12 @@ export async function connectDatabase(): Promise<string> {
       const { MongoMemoryServer } = await import('mongodb-memory-server');
       mkdirSync(env.MONGODB_DATA_PATH, { recursive: true });
       const server = await MongoMemoryServer.create({
-        instance: { port: env.MONGODB_PORT, dbName: env.MONGODB_DB, dbPath: env.MONGODB_DATA_PATH, storageEngine: 'wiredTiger' },
+        instance: {
+          port: env.MONGODB_PORT,
+          dbName: env.MONGODB_DB,
+          dbPath: env.MONGODB_DATA_PATH,
+          storageEngine: 'wiredTiger',
+        },
       });
       memoryServer = server;
       uri = server.getUri(env.MONGODB_DB);

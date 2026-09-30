@@ -17,16 +17,32 @@ import { buildIndex } from '../src/modules/doctar/directory.js';
 import { mongoDoctarSource } from '../src/modules/doctar/source.js';
 
 const line = (label: string, rows: Record<string, number>, top = 20) =>
-  [`  ${label}:`, ...Object.entries(rows).sort((a, b) => b[1] - a[1]).slice(0, top).map(([k, n]) => `    ${String(n).padStart(7)}  ${k}`)].join('\n');
+  [
+    `  ${label}:`,
+    ...Object.entries(rows)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, top)
+      .map(([k, n]) => `    ${String(n).padStart(7)}  ${k}`),
+  ].join('\n');
 
 async function main() {
-  if (!process.env.MONGODB_URI || !env.DOCTAR_DB_URL) throw new Error('MONGODB_URI and DOCTAR_DB_URL must be set in backend/.env');
+  if (!process.env.MONGODB_URI || !env.DOCTAR_DB_URL)
+    throw new Error('MONGODB_URI and DOCTAR_DB_URL must be set in backend/.env');
   // Curxx is only read (cities, specialties); no indexes or collections are created.
-  await mongoose.connect(process.env.MONGODB_URI, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 15_000 });
-  const src = mongoDoctarSource(env.DOCTAR_DB_URL, { poolSize: env.DOCTAR_POOL_SIZE, timeoutMs: env.DOCTAR_TIMEOUT_MS });
+  await mongoose.connect(process.env.MONGODB_URI, {
+    autoIndex: false,
+    autoCreate: false,
+    serverSelectionTimeoutMS: 15_000,
+  });
+  const src = mongoDoctarSource(env.DOCTAR_DB_URL, {
+    poolSize: env.DOCTAR_POOL_SIZE,
+    timeoutMs: env.DOCTAR_TIMEOUT_MS,
+  });
   try {
     await reloadCatalogue();
-    console.log(`Doctar directory report (read-only) · ${env.DOCTAR_VERIFIED_ONLY ? 'admin-verified doctors only' : 'all doctors'} · page size ${env.DOCTAR_PAGE_SIZE}`);
+    console.log(
+      `Doctar directory report (read-only) · ${env.DOCTAR_VERIFIED_ONLY ? 'admin-verified doctors only' : 'all doctors'} · page size ${env.DOCTAR_PAGE_SIZE}`,
+    );
     const ix = await buildIndex(src);
     const r = ix.report!;
     const perCity: Record<string, number> = {};
@@ -37,10 +53,18 @@ async function main() {
     }
     const hospitalsPerCity: Record<string, number> = {};
     for (const f of ix.facilities) hospitalsPerCity[f.city] = (hospitalsPerCity[f.city] ?? 0) + 1;
-    const gz = gzipSync(Buffer.from(JSON.stringify({ doctors: ix.doctors, facilities: ix.facilities })));
-    console.log(`  Doctors listed: ${r.doctors} of ${r.scanned} scanned${r.capped ? ' (capped by DOCTAR_MAX_DOCTORS)' : ''} · hospitals: ${r.facilities}`);
-    console.log(`  Linked to a hospital page: ${ix.doctors.filter((d) => d.facilitySlug).length} · with weekly hours: ${ix.doctors.filter((d) => d.consultHours).length} · with gender: ${ix.doctors.filter((d) => d.gender).length} · Doctar-verified: ${ix.doctors.filter((d) => d.doctarVerified).length}`);
-    console.log(`  Build: ${r.seconds}s · peak memory ${r.peakRssMb} MB RSS / ${r.peakHeapMb} MB heap · cold-start cache ${(gz.length / 1e6).toFixed(1)} MB gzipped`);
+    const gz = gzipSync(
+      Buffer.from(JSON.stringify({ doctors: ix.doctors, facilities: ix.facilities })),
+    );
+    console.log(
+      `  Doctors listed: ${r.doctors} of ${r.scanned} scanned${r.capped ? ' (capped by DOCTAR_MAX_DOCTORS)' : ''} · hospitals: ${r.facilities}`,
+    );
+    console.log(
+      `  Linked to a hospital page: ${ix.doctors.filter((d) => d.facilitySlug).length} · with weekly hours: ${ix.doctors.filter((d) => d.consultHours).length} · with gender: ${ix.doctors.filter((d) => d.gender).length} · Doctar-verified: ${ix.doctors.filter((d) => d.doctarVerified).length}`,
+    );
+    console.log(
+      `  Build: ${r.seconds}s · peak memory ${r.peakRssMb} MB RSS / ${r.peakHeapMb} MB heap · cold-start cache ${(gz.length / 1e6).toFixed(1)} MB gzipped`,
+    );
     console.log(line('Doctors per city', perCity, 30));
     console.log(line('Hospitals per city', hospitalsPerCity, 30));
     console.log(line('Top specialties', perSpecialty, 15));

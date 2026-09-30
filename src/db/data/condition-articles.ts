@@ -17,10 +17,27 @@ export const EXTRA_ARTICLE_CATEGORIES = [
 ];
 
 const CATEGORY_FOR: Record<string, string> = {
-  'general-physician': 'general-health', dermatologist: 'skin-hair', psychiatrist: 'mental-health', gastroenterologist: 'digestive-health', hepatologist: 'digestive-health',
-  gynecologist: 'womens-health', 'fertility-infertility-specialist': 'womens-health', cardiologist: 'heart-health', endocrinologist: 'diabetes', orthopedist: 'bones-joints',
-  rheumatologist: 'bones-joints', neurologist: 'general-health', urologist: 'kidney-urology', 'general-surgeon': 'surgery', dentist: 'dental', pulmonologist: 'lungs-allergy',
-  'ent-specialist': 'eye-ear', ophthalmologist: 'eye-ear', sexologist: 'mens-health', dietician: 'nutrition', pediatrician: 'child-health',
+  'general-physician': 'general-health',
+  dermatologist: 'skin-hair',
+  psychiatrist: 'mental-health',
+  gastroenterologist: 'digestive-health',
+  hepatologist: 'digestive-health',
+  gynecologist: 'womens-health',
+  'fertility-infertility-specialist': 'womens-health',
+  cardiologist: 'heart-health',
+  endocrinologist: 'diabetes',
+  orthopedist: 'bones-joints',
+  rheumatologist: 'bones-joints',
+  neurologist: 'general-health',
+  urologist: 'kidney-urology',
+  'general-surgeon': 'surgery',
+  dentist: 'dental',
+  pulmonologist: 'lungs-allergy',
+  'ent-specialist': 'eye-ear',
+  ophthalmologist: 'eye-ear',
+  sexologist: 'mens-health',
+  dietician: 'nutrition',
+  pediatrician: 'child-health',
 };
 
 const days = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -42,13 +59,32 @@ export function buildConditionArticles() {
       authorSpecialty: c.specialty,
       sections: [
         { heading: `What is ${c.name.toLowerCase()}?`, body: c.summary },
-        { heading: 'Common symptoms', body: `People with ${c.name.toLowerCase()} most often notice: ${list(c.symptoms)}. Symptoms vary from person to person, so a doctor’s examination matters more than any checklist.` },
-        { heading: 'What causes it', body: `The usual causes and risk factors are ${list(c.causes)}. Knowing the likely cause guides both treatment and prevention.` },
-        { heading: 'How it is treated', body: `A ${sp.name.toLowerCase()} will usually recommend ${list(c.treatments)}. Treatment is tailored to your age, other conditions and how long symptoms have lasted.` },
-        { heading: 'What you can do at home', body: `Alongside medical advice: ${list(c.selfCare)}.` },
-        { heading: `When to see a ${sp.name.toLowerCase()}`, body: `Book a consultation if you have ${list(c.whenToSee)}. On Curxx you can video consult a verified ${sp.name.toLowerCase()} within minutes or book a clinic visit near you.` },
+        {
+          heading: 'Common symptoms',
+          body: `People with ${c.name.toLowerCase()} most often notice: ${list(c.symptoms)}. Symptoms vary from person to person, so a doctor’s examination matters more than any checklist.`,
+        },
+        {
+          heading: 'What causes it',
+          body: `The usual causes and risk factors are ${list(c.causes)}. Knowing the likely cause guides both treatment and prevention.`,
+        },
+        {
+          heading: 'How it is treated',
+          body: `A ${sp.name.toLowerCase()} will usually recommend ${list(c.treatments)}. Treatment is tailored to your age, other conditions and how long symptoms have lasted.`,
+        },
+        {
+          heading: 'What you can do at home',
+          body: `Alongside medical advice: ${list(c.selfCare)}.`,
+        },
+        {
+          heading: `When to see a ${sp.name.toLowerCase()}`,
+          body: `Book a consultation if you have ${list(c.whenToSee)}. On Curxx you can video consult a verified ${sp.name.toLowerCase()} within minutes or book a clinic visit near you.`,
+        },
       ],
-      keyTakeaways: [c.summary.split('. ')[0]!.replace(/\.$/, '') + '.', `See a ${sp.name.toLowerCase()} for: ${c.whenToSee[0]!.toLowerCase()}.`, c.selfCare[0]!],
+      keyTakeaways: [
+        c.summary.split('. ')[0]!.replace(/\.$/, '') + '.',
+        `See a ${sp.name.toLowerCase()} for: ${c.whenToSee[0]!.toLowerCase()}.`,
+        c.selfCare[0]!,
+      ],
       tags: [c.name.toLowerCase(), sp.name.toLowerCase(), c.slug],
       condition: c.slug,
     };

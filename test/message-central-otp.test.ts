@@ -3,7 +3,13 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { buildApp } from '../src/app.js';
 import { env } from '../src/config/env.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
-import { resetTokenCache, isMessageCentralConfigured, getAuthToken, sendOtpMessageCentral, validateOtpMessageCentral } from '../src/lib/notify/message-central.js';
+import {
+  resetTokenCache,
+  isMessageCentralConfigured,
+  getAuthToken,
+  sendOtpMessageCentral,
+  validateOtpMessageCentral,
+} from '../src/lib/notify/message-central.js';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
 let app: App;
@@ -54,17 +60,28 @@ describe('Message Central VerifyNow client & OTP flow', () => {
       const urlString = input.toString();
       if (urlString.includes('/auth/v1/authentication/token')) {
         tokenFetchCount++;
-        return new Response(JSON.stringify({ responseCode: 200, token: fakeToken }), { status: 200 });
+        return new Response(JSON.stringify({ responseCode: 200, token: fakeToken }), {
+          status: 200,
+        });
       }
       if (urlString.includes('/verification/v3/send')) {
         assert.equal(init?.headers && (init.headers as any).authToken, fakeToken);
-        return new Response(JSON.stringify({ responseCode: 200, data: { verificationId: fakeVerificationId } }), { status: 200 });
+        return new Response(
+          JSON.stringify({ responseCode: 200, data: { verificationId: fakeVerificationId } }),
+          { status: 200 },
+        );
       }
       if (urlString.includes('/verification/v3/validateOtp')) {
         assert.equal(init?.headers && (init.headers as any).authToken, fakeToken);
         assert.ok(urlString.includes(`verificationId=${fakeVerificationId}`));
         assert.ok(urlString.includes('code=1234'));
-        return new Response(JSON.stringify({ responseCode: 200, data: { verificationStatus: 'VERIFICATION_COMPLETED' } }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            responseCode: 200,
+            data: { verificationStatus: 'VERIFICATION_COMPLETED' },
+          }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unexpected fetch URL: ${urlString}`);
     };
@@ -110,7 +127,9 @@ describe('Message Central VerifyNow client & OTP flow', () => {
     assert.equal(req.status, 200);
 
     // 6-digit code should fail validation format
-    const badFormat = await call('POST', '/auth/otp/verify', { body: { phone: p, code: '123456' } });
+    const badFormat = await call('POST', '/auth/otp/verify', {
+      body: { phone: p, code: '123456' },
+    });
     assert.equal(badFormat.status, 400);
     assert.equal(badFormat.body.error, 'invalid_code');
 
@@ -123,7 +142,9 @@ describe('Message Central VerifyNow client & OTP flow', () => {
     }
 
     // 5th wrong attempt invalidates the challenge
-    const fifthWrong = await call('POST', '/auth/otp/verify', { body: { phone: p, code: wrongCode } });
+    const fifthWrong = await call('POST', '/auth/otp/verify', {
+      body: { phone: p, code: wrongCode },
+    });
     assert.equal(fifthWrong.status, 401);
     assert.equal(fifthWrong.body.error, 'too_many_attempts');
   });

@@ -7,7 +7,13 @@ import { Schema, model } from 'mongoose';
  */
 
 const localitySchema = new Schema(
-  { slug: { type: String, required: true }, name: { type: String, required: true }, pincode: { type: String, default: '' }, lat: Number, lng: Number },
+  {
+    slug: { type: String, required: true },
+    name: { type: String, required: true },
+    pincode: { type: String, default: '' },
+    lat: Number,
+    lng: Number,
+  },
   { _id: false },
 );
 

@@ -21,7 +21,13 @@ export type SlotSource = {
   bookable?: boolean | null;
   /** Imported doctors ("doctar") take requests on computed times instead of stored slots; see booking-mode.ts. */
   source?: string | null;
-  schedule?: { days?: number[] | null; sessions?: Session[] | null; perDay?: { day?: number | null; sessions?: Session[] | null }[] | null; step?: number | null; video?: string | null } | null;
+  schedule?: {
+    days?: number[] | null;
+    sessions?: Session[] | null;
+    perDay?: { day?: number | null; sessions?: Session[] | null }[] | null;
+    step?: number | null;
+    video?: string | null;
+  } | null;
 };
 
 const dayStart = (d: Date) => {
@@ -35,7 +41,9 @@ const addDays = (d: Date, n: number) => {
   return x;
 };
 const minutesOf = (hhmm?: string | null) => {
-  const [h, m] = String(hhmm ?? '0:0').split(':').map(Number);
+  const [h, m] = String(hhmm ?? '0:0')
+    .split(':')
+    .map(Number);
   return (h ?? 0) * 60 + (m ?? 0);
 };
 
@@ -48,8 +56,23 @@ export function slotsForDay(doctor: SlotSource, day: Date, now = new Date()) {
   const videoMode = schedule.video ?? 'mixed';
   // A day can have its own hours (perDay); otherwise the common sessions apply.
   const own = schedule.perDay?.find((p) => p.day === day.getDay())?.sessions;
-  const sessions = own?.length ? own : schedule.sessions?.length ? schedule.sessions : [{ start: '10:00', end: '13:30' }, { start: '17:00', end: '20:30' }];
-  const out: { doctor: unknown; doctorSlug: string; startsAt: Date; mode: 'clinic' | 'video'; fee: number; free: boolean; status: 'open' }[] = [];
+  const sessions = own?.length
+    ? own
+    : schedule.sessions?.length
+      ? schedule.sessions
+      : [
+          { start: '10:00', end: '13:30' },
+          { start: '17:00', end: '20:30' },
+        ];
+  const out: {
+    doctor: unknown;
+    doctorSlug: string;
+    startsAt: Date;
+    mode: 'clinic' | 'video';
+    fee: number;
+    free: boolean;
+    status: 'open';
+  }[] = [];
   let index = 0;
   let freeLeft = doctor.freeVideo ? FREE_VIDEO_PER_DAY : 0;
   for (const session of sessions) {
@@ -61,7 +84,15 @@ export function slotsForDay(doctor: SlotSource, day: Date, now = new Date()) {
       const video = videoMode === 'all' || (videoMode === 'mixed' && index % 3 === 1);
       const free = video && freeLeft > 0;
       if (free) freeLeft -= 1;
-      out.push({ doctor: doctor._id, doctorSlug: doctor.slug, startsAt, mode: video ? 'video' : 'clinic', fee: free ? 0 : video ? doctor.videoFee : doctor.fee, free, status: 'open' });
+      out.push({
+        doctor: doctor._id,
+        doctorSlug: doctor.slug,
+        startsAt,
+        mode: video ? 'video' : 'clinic',
+        fee: free ? 0 : video ? doctor.videoFee : doctor.fee,
+        free,
+        status: 'open',
+      });
     }
   }
   return out;
@@ -70,7 +101,9 @@ export function slotsForDay(doctor: SlotSource, day: Date, now = new Date()) {
 const isDuplicateOnly = (error: unknown) => {
   const e = error as { code?: number; writeErrors?: { code?: number; err?: { code?: number } }[] };
   if (e.code === 11000 && !e.writeErrors) return true;
-  return Array.isArray(e.writeErrors) && e.writeErrors.every((w) => (w.code ?? w.err?.code) === 11000);
+  return (
+    Array.isArray(e.writeErrors) && e.writeErrors.every((w) => (w.code ?? w.err?.code) === 11000)
+  );
 };
 
 /**
@@ -80,9 +113,14 @@ const isDuplicateOnly = (error: unknown) => {
 export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?: number) {
   const today = dayStart(now);
   // A query about today only needs today's slots; later days follow when someone opens a profile.
-  const aheadFor = (d: SlotSource) => Math.min(days ?? Infinity, d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD);
+  const aheadFor = (d: SlotSource) =>
+    Math.min(days ?? Infinity, d.instant ? INSTANT_DAYS_AHEAD : DAYS_AHEAD);
   // Only instant-booking doctors get stored slots; request doctors' times are computed (openRequestSlots).
-  const stale = doctors.filter((d) => bookingModeOf(d) === 'instant' && (!d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1)));
+  const stale = doctors.filter(
+    (d) =>
+      bookingModeOf(d) === 'instant' &&
+      (!d.slotsThrough || dayStart(new Date(d.slotsThrough)) < addDays(today, aheadFor(d) - 1)),
+  );
   if (!stale.length) return;
 
   const docs = [];
@@ -90,8 +128,12 @@ export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?
   for (const doctor of stale) {
     const ahead = aheadFor(doctor);
     const last = addDays(today, ahead - 1);
-    const from = doctor.slotsThrough && dayStart(new Date(doctor.slotsThrough)) >= today ? addDays(dayStart(new Date(doctor.slotsThrough)), 1) : today;
-    for (let day = from; day <= last; day = addDays(day, 1)) docs.push(...slotsForDay(doctor, day, now));
+    const from =
+      doctor.slotsThrough && dayStart(new Date(doctor.slotsThrough)) >= today
+        ? addDays(dayStart(new Date(doctor.slotsThrough)), 1)
+        : today;
+    for (let day = from; day <= last; day = addDays(day, 1))
+      docs.push(...slotsForDay(doctor, day, now));
     through.set(String(doctor._id), last);
   }
   if (docs.length) {
@@ -102,7 +144,14 @@ export async function ensureSlots(doctors: SlotSource[], now = new Date(), days?
       if (!isDuplicateOnly(error)) throw error;
     }
   }
-  await DoctorModel.bulkWrite(stale.map((d) => ({ updateOne: { filter: { _id: d._id }, update: { $set: { slotsThrough: through.get(String(d._id)) } } } })) as never);
+  await DoctorModel.bulkWrite(
+    stale.map((d) => ({
+      updateOne: {
+        filter: { _id: d._id },
+        update: { $set: { slotsThrough: through.get(String(d._id)) } },
+      },
+    })) as never,
+  );
   // Keep the in-memory docs in step so callers can reuse them.
   for (const d of stale) d.slotsThrough = through.get(String(d._id)) ?? null;
 }
@@ -116,7 +165,8 @@ export function requestTimes(doctor: SlotSource, now = new Date(), days = REQUES
     const day = addDays(today, i);
     // slotsForDay falls back to default hours for a day without sessions; a real doctor's hours are never invented.
     const own = schedule.perDay?.find((p) => p.day === day.getDay())?.sessions;
-    if (!schedule.days?.includes(day.getDay()) || !(own?.length || schedule.sessions?.length)) continue;
+    if (!schedule.days?.includes(day.getDay()) || !(own?.length || schedule.sessions?.length))
+      continue;
     out.push(...slotsForDay({ ...doctor, freeVideo: false }, day, now));
   }
   return out;
@@ -127,8 +177,15 @@ export function requestTimes(doctor: SlotSource, now = new Date(), days = REQUES
  * currently held. Only a time someone picks becomes a stored slot, so thousands of imported doctors
  * cost no storage until patients use them.
  */
-export async function openRequestSlots(doctors: SlotSource[], now = new Date(), days = REQUEST_DAYS_AHEAD) {
-  const out = new Map<string, { id: string; startsAt: Date; mode: 'clinic' | 'video'; fee: number; free: false }[]>();
+export async function openRequestSlots(
+  doctors: SlotSource[],
+  now = new Date(),
+  days = REQUEST_DAYS_AHEAD,
+) {
+  const out = new Map<
+    string,
+    { id: string; startsAt: Date; mode: 'clinic' | 'video'; fee: number; free: false }[]
+  >();
   const requestable = doctors.filter((d) => bookingModeOf(d) === 'request');
   if (!requestable.length) return out;
   const taken = await SlotModel.find(
@@ -145,7 +202,13 @@ export async function openRequestSlots(doctors: SlotSource[], now = new Date(), 
       d.slug,
       requestTimes(d, now, days)
         .filter((t) => !busy.has(`${d.slug}|${t.startsAt.getTime()}`))
-        .map((t) => ({ id: requestSlotId(d.slug, t.startsAt), startsAt: t.startsAt, mode: t.mode, fee: t.fee, free: false as const })),
+        .map((t) => ({
+          id: requestSlotId(d.slug, t.startsAt),
+          startsAt: t.startsAt,
+          mode: t.mode,
+          fee: t.fee,
+          free: false as const,
+        })),
     );
   }
   return out;
@@ -154,6 +217,9 @@ export async function openRequestSlots(doctors: SlotSource[], now = new Date(), 
 /** Drops unbooked slots that are already in the past (open, or a hold that lapsed), so the collection doesn't grow forever. */
 export async function pruneSlots(now = new Date()) {
   const cutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-  const { deletedCount } = await SlotModel.deleteMany({ startsAt: { $lt: cutoff }, $or: [{ status: 'open' }, { status: 'held', holdExpiresAt: { $lt: now } }] });
+  const { deletedCount } = await SlotModel.deleteMany({
+    startsAt: { $lt: cutoff },
+    $or: [{ status: 'open' }, { status: 'held', holdExpiresAt: { $lt: now } }],
+  });
   return deletedCount ?? 0;
 }

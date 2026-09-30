@@ -6,7 +6,12 @@ import { Schema, model } from 'mongoose';
  */
 
 const targetFields = {
-  targetType: { type: String, enum: ['doctor', 'facility', 'lab', 'lab-test', 'medicine', 'site'], required: true, index: true },
+  targetType: {
+    type: String,
+    enum: ['doctor', 'facility', 'lab', 'lab-test', 'medicine', 'site'],
+    required: true,
+    index: true,
+  },
   targetSlug: { type: String, default: '', index: true },
   targetName: { type: String, default: '' },
   city: { type: String, default: '', index: true },
@@ -50,7 +55,12 @@ const reportSchema = new Schema(
     contact: { type: String, default: '' },
     page: { type: String, default: '' },
     user: { type: Schema.Types.ObjectId, ref: 'User' },
-    status: { type: String, enum: ['new', 'reviewing', 'fixed', 'rejected'], default: 'new', index: true },
+    status: {
+      type: String,
+      enum: ['new', 'reviewing', 'fixed', 'rejected'],
+      default: 'new',
+      index: true,
+    },
     note: { type: String, default: '' },
   },
   { timestamps: true, versionKey: false },

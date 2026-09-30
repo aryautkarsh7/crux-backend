@@ -24,7 +24,10 @@ const reviewSchema = new Schema(
 
 reviewSchema.index({ doctorSlug: 1, createdAt: -1 });
 // One review per patient per doctor; seeded reviews have no user.
-reviewSchema.index({ doctorSlug: 1, user: 1 }, { unique: true, partialFilterExpression: { user: { $exists: true } } });
+reviewSchema.index(
+  { doctorSlug: 1, user: 1 },
+  { unique: true, partialFilterExpression: { user: { $exists: true } } },
+);
 // Real reviews: written by a patient, or added by the team in the admin panel.
 hideSampleData(reviewSchema, () => ({ $or: [{ user: { $ne: null } }, { managed: true }] }));
 

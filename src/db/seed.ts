@@ -17,9 +17,14 @@ async function seed() {
   await connectDatabase();
   console.log('seeding…');
   await syncCatalogue(process.env.SEED_VERBOSE ? console.log : undefined);
-  await MetaModel.updateOne({ _id: 'catalogue' }, { $set: { version: DATA_VERSION, running: false, syncedAt: new Date(), error: '' } }, { upsert: true });
+  await MetaModel.updateOne(
+    { _id: 'catalogue' },
+    { $set: { version: DATA_VERSION, running: false, syncedAt: new Date(), error: '' } },
+    { upsert: true },
+  );
 
-  const count = async (label: string, n: Promise<number>) => console.log(`${label.padEnd(14)}${await n}`);
+  const count = async (label: string, n: Promise<number>) =>
+    console.log(`${label.padEnd(14)}${await n}`);
   await count('specialties', SpecialtyModel.countDocuments());
   await count('facilities', FacilityModel.countDocuments());
   await count('doctors', DoctorModel.countDocuments());

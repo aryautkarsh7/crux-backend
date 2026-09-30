@@ -15,7 +15,12 @@ import { directoryMatches, directoryUnavailable } from './directory.js';
 export type Doc = Record<string, any> & { _id: any };
 type Filter = Record<string, unknown>;
 type Projection = Record<string, 0 | 1> | string;
-export type FindOptions = { projection?: Projection; sort?: Record<string, 1 | -1>; skip?: number; limit?: number };
+export type FindOptions = {
+  projection?: Projection;
+  sort?: Record<string, 1 | -1>;
+  skip?: number;
+  limit?: number;
+};
 
 const curxxOnly = (filter: Filter): Filter => ({ $and: [filter, { source: { $ne: 'doctar' } }] });
 
@@ -33,10 +38,14 @@ function store(model: Model<any>, kind: 'doctors' | 'facilities') {
       let all = memory.length ? [...curxx, ...memory] : curxx;
       if (options.sort && memory.length) all = sortBy(all, options.sort);
       const page = Number.isFinite(want) ? all.slice(skip, want) : skip ? all.slice(skip) : all;
-      return memory.length && options.projection ? page.map((d) => (d.source === 'doctar' ? project(d, options.projection) : d)) : page;
+      return memory.length && options.projection
+        ? page.map((d) => (d.source === 'doctar' ? project(d, options.projection) : d))
+        : page;
     },
     async findOne(filter: Filter, projection?: Projection): Promise<Doc | null> {
-      const curxx = (await model.findOne(curxxOnly(filter), projection ?? undefined).lean()) as Doc | null;
+      const curxx = (await model
+        .findOne(curxxOnly(filter), projection ?? undefined)
+        .lean()) as Doc | null;
       if (curxx) return curxx;
       const hit = fromMemory(filter)[0];
       return hit ? (projection ? project(hit, projection) : hit) : null;
@@ -64,7 +73,8 @@ function store(model: Model<any>, kind: 'doctors' | 'facilities') {
       const counts = new Map<unknown, number>(curxx.map((r) => [r._id, r.count]));
       for (const d of fromMemory(filter)) {
         const v = d[field];
-        for (const x of Array.isArray(v) ? v : [v]) counts.set(x ?? null, (counts.get(x ?? null) ?? 0) + 1);
+        for (const x of Array.isArray(v) ? v : [v])
+          counts.set(x ?? null, (counts.get(x ?? null) ?? 0) + 1);
       }
       return [...counts].map(([_id, count]) => ({ _id, count }));
     },
@@ -72,7 +82,8 @@ function store(model: Model<any>, kind: 'doctors' | 'facilities') {
 }
 
 /** For a doctor or hospital that isn't found: while Doctar's records aren't loaded it may just be missing for now (503, not 404). */
-export const notListed = (message: string) => (directoryUnavailable() ? unavailable() : notFound(message));
+export const notListed = (message: string) =>
+  directoryUnavailable() ? unavailable() : notFound(message);
 
 export const Doctors = store(DoctorModel, 'doctors');
 export const Facilities = store(FacilityModel, 'facilities');

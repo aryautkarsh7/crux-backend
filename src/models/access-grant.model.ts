@@ -9,7 +9,11 @@ const accessGrantSchema = new Schema(
       kind: { type: String, enum: ['doctor', 'hospital', 'family', 'insurer'], required: true },
       detail: { type: String, default: '' },
     },
-    scope: { type: String, enum: ['all', 'prescriptions', 'lab_reports', 'selected'], default: 'all' },
+    scope: {
+      type: String,
+      enum: ['all', 'prescriptions', 'lab_reports', 'selected'],
+      default: 'all',
+    },
     permission: { type: String, enum: ['view', 'download'], default: 'view' },
     records: [{ type: Schema.Types.ObjectId, ref: 'HealthRecord' }],
     expiresAt: { type: Date, required: true },

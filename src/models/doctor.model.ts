@@ -13,7 +13,10 @@ const doctorSchema = new Schema(
     clinicName: { type: String, required: true },
     facilitySlug: { type: String, default: '', index: true },
     gender: { type: String, enum: ['female', 'male'], default: 'female' },
-    education: { type: [{ degree: String, institute: String, year: Number, _id: false }], default: [] },
+    education: {
+      type: [{ degree: String, institute: String, year: Number, _id: false }],
+      default: [],
+    },
     registration: { type: String, default: '' },
     experienceYears: { type: Number, required: true },
     fee: { type: Number, required: true },
@@ -31,7 +34,10 @@ const doctorSchema = new Schema(
       days: { type: [Number], default: [1, 2, 3, 4, 5, 6] },
       sessions: { type: [{ start: String, end: String, _id: false }], default: [] },
       /** Days with their own hours; a day listed here ignores the common sessions. */
-      perDay: { type: [{ day: Number, sessions: [{ start: String, end: String, _id: false }], _id: false }], default: [] },
+      perDay: {
+        type: [{ day: Number, sessions: [{ start: String, end: String, _id: false }], _id: false }],
+        default: [],
+      },
       step: { type: Number, default: 30 },
       video: { type: String, enum: ['none', 'mixed', 'all'], default: 'mixed' },
     },

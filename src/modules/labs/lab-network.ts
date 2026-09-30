@@ -26,7 +26,8 @@ const VISIT_WINDOWS = [
   { label: '05:00 – 06:00 PM', hour: 17 },
   { label: '06:00 – 07:00 PM', hour: 18 },
 ];
-export const windowsFor = (mode: CollectionMode) => (mode === 'home' ? HOME_WINDOWS : VISIT_WINDOWS);
+export const windowsFor = (mode: CollectionMode) =>
+  mode === 'home' ? HOME_WINDOWS : VISIT_WINDOWS;
 export const COLLECTION_WINDOWS = HOME_WINDOWS.map((w) => w.label);
 
 /** Walk-in bookings per window at a lab counter. */
@@ -34,9 +35,11 @@ const WALK_IN_CAPACITY = 12;
 /** Orders placed before labs existed were processed here. */
 export const DEFAULT_LAB = 'curxx-diagnostics-koramangala';
 
-export const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const dayKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export const loadLabs = (city = 'bangalore') => LabModel.find({ city: resolveCitySlug(city) ?? city }).lean<LabDoc[]>();
+export const loadLabs = (city = 'bangalore') =>
+  LabModel.find({ city: resolveCitySlug(city) ?? city }).lean<LabDoc[]>();
 
 /** The patient's location from a pincode, else the centre of their city, else our default neighbourhood. */
 export const origin = (pincode?: string, city?: string): Place => {
@@ -47,7 +50,9 @@ export const origin = (pincode?: string, city?: string): Place => {
 };
 
 /** Scans and procedures need the patient at the centre — they can't be collected at home. */
-export const visitOnly = (tests: { slug: string; name: string; homeCollection?: boolean | null }[]) => tests.filter((t) => t.homeCollection === false);
+export const visitOnly = (
+  tests: { slug: string; name: string; homeCollection?: boolean | null }[],
+) => tests.filter((t) => t.homeCollection === false);
 
 /** How well a lab suits a patient at `place` who wants `testSlugs`. */
 export function fit(lab: LabDoc, place: Place, testSlugs: string[] = []) {
@@ -63,7 +68,12 @@ export function fit(lab: LabDoc, place: Place, testSlugs: string[] = []) {
 }
 
 /** Labs that can take this booking, nearest first. */
-export function eligibleLabs(labs: LabDoc[], place: Place, testSlugs: string[], mode: CollectionMode) {
+export function eligibleLabs(
+  labs: LabDoc[],
+  place: Place,
+  testSlugs: string[],
+  mode: CollectionMode,
+) {
   return labs
     .map((lab) => ({ lab, ...fit(lab, place, testSlugs) }))
     .filter((l) => l.offersAll && (mode === 'home' ? l.canCollect : l.canVisit))
@@ -79,7 +89,9 @@ export const labSnapshot = (lab: LabDoc) => ({
   phone: lab.phone,
   lat: lab.geo!.lat,
   lng: lab.geo!.lng,
-  pathologist: lab.pathologist?.name ? `${lab.pathologist.name}, ${lab.pathologist.qualification}` : '',
+  pathologist: lab.pathologist?.name
+    ? `${lab.pathologist.name}, ${lab.pathologist.qualification}`
+    : '',
 });
 
 /** Collection start time for a booked day + window. */
@@ -91,14 +103,28 @@ export function collectionStart(date: string, windowLabel: string, mode: Collect
 }
 
 /** Next five days of windows at one lab, with live remaining capacity. */
-export async function collectionAvailability({ lab, mode, now = new Date() }: { lab: LabDoc; mode: CollectionMode; now?: Date }) {
+export async function collectionAvailability({
+  lab,
+  mode,
+  now = new Date(),
+}: {
+  lab: LabDoc;
+  mode: CollectionMode;
+  now?: Date;
+}) {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(start.getDate() + 5);
 
-  const atThisLab = lab.slug === DEFAULT_LAB ? { $or: [{ 'lab.slug': lab.slug }, { 'lab.slug': { $exists: false } }] } : { 'lab.slug': lab.slug };
-  const booked = await OrderModel.aggregate<{ _id: { day: string; window: string }; count: number }>([
+  const atThisLab =
+    lab.slug === DEFAULT_LAB
+      ? { $or: [{ 'lab.slug': lab.slug }, { 'lab.slug': { $exists: false } }] }
+      : { 'lab.slug': lab.slug };
+  const booked = await OrderModel.aggregate<{
+    _id: { day: string; window: string };
+    count: number;
+  }>([
     {
       $match: {
         kind: 'lab',
@@ -108,10 +134,25 @@ export async function collectionAvailability({ lab, mode, now = new Date() }: { 
         ...atThisLab,
       },
     },
-    { $group: { _id: { day: { $dateToString: { format: '%Y-%m-%d', date: '$pickup.date', timezone: '+05:30' } }, window: '$pickup.window' }, count: { $sum: 1 } } },
+    {
+      $group: {
+        _id: {
+          day: { $dateToString: { format: '%Y-%m-%d', date: '$pickup.date', timezone: '+05:30' } },
+          window: '$pickup.window',
+        },
+        count: { $sum: 1 },
+      },
+    },
   ]);
   const taken = new Map(booked.map((b) => [`${b._id.day}|${b._id.window}`, b.count]));
-  const capacity = mode === 'home' ? (lab.homeCollection ? lab.phlebotomists ?? 0 : 0) : lab.walkIn ? WALK_IN_CAPACITY : 0;
+  const capacity =
+    mode === 'home'
+      ? lab.homeCollection
+        ? (lab.phlebotomists ?? 0)
+        : 0
+      : lab.walkIn
+        ? WALK_IN_CAPACITY
+        : 0;
   // A phlebotomist needs 90 minutes to reach you; a lab counter only needs you to get there.
   const noticeMs = (mode === 'home' ? 90 : 30) * 60 * 1000;
 
@@ -130,7 +171,8 @@ export async function collectionAvailability({ lab, mode, now = new Date() }: { 
         // Sundays are half days.
         const shut = closedAllDay || (sunday && hour >= 12);
         const tooSoon = startsAt.getTime() - now.getTime() < noticeMs;
-        const remaining = shut || tooSoon ? 0 : Math.max(0, capacity - (taken.get(`${key}|${label}`) ?? 0));
+        const remaining =
+          shut || tooSoon ? 0 : Math.max(0, capacity - (taken.get(`${key}|${label}`) ?? 0));
         return { window: label, remaining, available: remaining > 0 };
       }),
     };

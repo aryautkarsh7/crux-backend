@@ -21,12 +21,24 @@ export const SURGERY_CATEGORIES_SLUG = 'catalogue-surgery-categories';
 
 const TTL_MS = 60_000;
 
-function build(cities: CityRecord[], conditions: ConditionRecord[], surgeries: SurgeryRecord[], categoryOrder: string[]) {
+function build(
+  cities: CityRecord[],
+  conditions: ConditionRecord[],
+  surgeries: SurgeryRecord[],
+  categoryOrder: string[],
+) {
   const cityBySlug = new Map(cities.map((c) => [c.slug, c]));
-  const aliasToSlug = new Map(cities.flatMap((c) => c.aliases.map((a) => [a.toLowerCase(), c.slug] as const)));
+  const aliasToSlug = new Map(
+    cities.flatMap((c) => c.aliases.map((a) => [a.toLowerCase(), c.slug] as const)),
+  );
   const localityByPin = new Map<string, { city: string; area: string; lat: number; lng: number }>();
-  for (const city of cities) for (const l of city.localities) if (l.pincode && !localityByPin.has(l.pincode)) localityByPin.set(l.pincode, { city: city.slug, area: l.name, lat: l.lat, lng: l.lng });
-  const surgeryCategories = [...new Set([...categoryOrder, ...surgeries.map((s) => s.category)])].filter((c) => surgeries.some((s) => s.category === c));
+  for (const city of cities)
+    for (const l of city.localities)
+      if (l.pincode && !localityByPin.has(l.pincode))
+        localityByPin.set(l.pincode, { city: city.slug, area: l.name, lat: l.lat, lng: l.lng });
+  const surgeryCategories = [
+    ...new Set([...categoryOrder, ...surgeries.map((s) => s.category)]),
+  ].filter((c) => surgeries.some((s) => s.category === c));
   return {
     cities,
     conditions,
@@ -44,7 +56,10 @@ let snapshot = build(CITIES, CONDITIONS, SURGERIES, SURGERY_CATEGORIES);
 let loadedAt = 0;
 let loading: Promise<void> | null = null;
 
-const plain = <T>(docs: Record<string, unknown>[]) => docs.map(({ _id: _i, managed: _m, createdAt: _c, updatedAt: _u, order: _o, ...rest }) => rest as T);
+const plain = <T>(docs: Record<string, unknown>[]) =>
+  docs.map(
+    ({ _id: _i, managed: _m, createdAt: _c, updatedAt: _u, order: _o, ...rest }) => rest as T,
+  );
 
 async function load() {
   const [cities, conditions, surgeries, categories] = await Promise.all([
@@ -53,12 +68,16 @@ async function load() {
     SurgeryModel.find().sort({ order: 1, name: 1 }).lean(),
     ContentModel.findOne({ slug: SURGERY_CATEGORIES_SLUG }, { items: 1 }).lean(),
   ]);
-  const conditionRecords = plain<ConditionRecord>(conditions).map((c) => ({ ...c, popular: c.popular || undefined }));
+  const conditionRecords = plain<ConditionRecord>(conditions).map((c) => ({
+    ...c,
+    popular: c.popular || undefined,
+  }));
   snapshot = build(
     cities.length ? plain<CityRecord>(cities) : CITIES,
     conditions.length ? conditionRecords : CONDITIONS,
     surgeries.length ? plain<SurgeryRecord>(surgeries) : SURGERIES,
-    (categories?.items as string[] | undefined)?.filter((c) => typeof c === 'string') ?? SURGERY_CATEGORIES,
+    (categories?.items as string[] | undefined)?.filter((c) => typeof c === 'string') ??
+      SURGERY_CATEGORIES,
   );
   loadedAt = Date.now();
 }
@@ -101,4 +120,7 @@ export function resolveCitySlug(input: string) {
 
 /** Popular cities first (by popularOrder), then the rest alphabetically. */
 export const popularCitySlugs = () =>
-  snapshot.cities.filter((c) => (c.popularOrder ?? 0) > 0).sort((a, b) => a.popularOrder! - b.popularOrder!).map((c) => c.slug);
+  snapshot.cities
+    .filter((c) => (c.popularOrder ?? 0) > 0)
+    .sort((a, b) => a.popularOrder! - b.popularOrder!)
+    .map((c) => c.slug);

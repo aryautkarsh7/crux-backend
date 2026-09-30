@@ -30,16 +30,24 @@ async function main() {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 15_000 });
   const target = mongoose.connection.db!.databaseName;
   const imported = { source: 'doctar' };
-  const [doctors, facilities] = await withSampleData(() => Promise.all([DoctorModel.find(imported).lean(), FacilityModel.find(imported).lean()]));
-  console.log(`Curxx database "${target}": ${doctors.length} imported doctors, ${facilities.length} imported hospitals/clinics.`);
+  const [doctors, facilities] = await withSampleData(() =>
+    Promise.all([DoctorModel.find(imported).lean(), FacilityModel.find(imported).lean()]),
+  );
+  console.log(
+    `Curxx database "${target}": ${doctors.length} imported doctors, ${facilities.length} imported hospitals/clinics.`,
+  );
   if (!CONFIRM_DB) {
     console.log(`Dry run. To remove them: npm run doctar:remove-imports -- --db ${target}`);
     return;
   }
-  if (CONFIRM_DB !== target) throw new Error(`Refusing to write: MONGODB_URI points at "${target}", not "${CONFIRM_DB}".`);
+  if (CONFIRM_DB !== target)
+    throw new Error(`Refusing to write: MONGODB_URI points at "${target}", not "${CONFIRM_DB}".`);
   if (!doctors.length && !facilities.length) return;
 
-  const dir = join(process.cwd(), `curxx-backup-doctar-imports-${target}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  const dir = join(
+    process.cwd(),
+    `curxx-backup-doctar-imports-${target}-${new Date().toISOString().replace(/[:.]/g, '-')}`,
+  );
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'doctors.json'), JSON.stringify(doctors, null, 2));
   writeFileSync(join(dir, 'facilities.json'), JSON.stringify(facilities, null, 2));
@@ -53,14 +61,26 @@ async function main() {
   for (const { kind, d } of carried) {
     await DoctarOverlayModel.updateOne(
       { kind, doctarId: String(d.doctarId) },
-      { $set: { rank: Number(d.rank) || 0, featured: Boolean((d as { featured?: boolean }).featured), slug: d.slug, name: d.name } },
+      {
+        $set: {
+          rank: Number(d.rank) || 0,
+          featured: Boolean((d as { featured?: boolean }).featured),
+          slug: d.slug,
+          name: d.name,
+        },
+      },
       { upsert: true },
     );
   }
-  if (carried.length) console.log(`Moved ranks/featured of ${carried.length} records to doctar_overlays.`);
+  if (carried.length)
+    console.log(`Moved ranks/featured of ${carried.length} records to doctar_overlays.`);
 
-  const [removedDoctors, removedFacilities] = await withSampleData(() => Promise.all([DoctorModel.deleteMany(imported), FacilityModel.deleteMany(imported)]));
-  console.log(`Removed ${removedDoctors.deletedCount} doctors and ${removedFacilities.deletedCount} hospitals/clinics from "${target}".`);
+  const [removedDoctors, removedFacilities] = await withSampleData(() =>
+    Promise.all([DoctorModel.deleteMany(imported), FacilityModel.deleteMany(imported)]),
+  );
+  console.log(
+    `Removed ${removedDoctors.deletedCount} doctors and ${removedFacilities.deletedCount} hospitals/clinics from "${target}".`,
+  );
 }
 
 main()

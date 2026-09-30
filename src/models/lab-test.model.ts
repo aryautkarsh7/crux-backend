@@ -9,7 +9,12 @@ const labTestSchema = new Schema(
   {
     slug: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    kind: { type: String, enum: ['package', 'test', 'scan', 'procedure'], required: true, index: true },
+    kind: {
+      type: String,
+      enum: ['package', 'test', 'scan', 'procedure'],
+      required: true,
+      index: true,
+    },
     /** False for scans and procedures that need a visit to a centre. */
     homeCollection: { type: Boolean, default: true },
     department: { type: String, default: '', index: true },

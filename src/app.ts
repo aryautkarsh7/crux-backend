@@ -29,7 +29,17 @@ import { directoryStatus, directoryUnavailable } from './modules/doctar/director
 
 export async function buildApp() {
   const app = Fastify({
-    logger: env.NODE_ENV === 'test' ? false : env.isProduction ? true : { transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } } },
+    logger:
+      env.NODE_ENV === 'test'
+        ? false
+        : env.isProduction
+          ? true
+          : {
+              transport: {
+                target: 'pino-pretty',
+                options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
+              },
+            },
     trustProxy: true,
     disableRequestLogging: env.isProduction,
     bodyLimit: 256 * 1024,
@@ -42,7 +52,8 @@ export async function buildApp() {
   // one address — so they get their own, larger bucket. Signed-in and write traffic keeps the tight limit,
   // and sensitive routes (OTP, reviews, leads) set stricter limits of their own.
   // The test suite fires hundreds of requests from one address; limits are tested separately.
-  const publicRead = (request: FastifyRequest) => request.method === 'GET' && !request.headers.authorization;
+  const publicRead = (request: FastifyRequest) =>
+    request.method === 'GET' && !request.headers.authorization;
   await app.register(rateLimit, {
     max: (request) => (publicRead(request) ? 1500 : 120),
     keyGenerator: (request) => `${request.ip}:${publicRead(request) ? 'read' : 'write'}`,
@@ -65,7 +76,9 @@ export async function buildApp() {
       return reply.status(error.statusCode).send({ error: error.code, message: error.message });
     }
     if (error.statusCode && error.statusCode < 500) {
-      return reply.status(error.statusCode).send({ error: error.code ?? 'error', message: error.message });
+      return reply
+        .status(error.statusCode)
+        .send({ error: error.code ?? 'error', message: error.message });
     }
     request.log.error({ err: error }, 'unhandled error');
     return reply.status(500).send({ error: 'server_error', message: 'Something went wrong' });
@@ -78,14 +91,22 @@ export async function buildApp() {
 
   // While Doctar's doctors aren't loaded, pages built from the directory are incomplete: don't let a CDN keep them.
   app.addHook('onSend', async (request, reply, payload) => {
-    if (request.method === 'GET' && directoryUnavailable() && String(reply.getHeader('cache-control') ?? '').startsWith('public')) {
+    if (
+      request.method === 'GET' &&
+      directoryUnavailable() &&
+      String(reply.getHeader('cache-control') ?? '').startsWith('public')
+    ) {
       reply.header('cache-control', 'no-store');
       reply.header('x-directory', 'unavailable');
     }
     return payload;
   });
 
-  app.get('/health', async () => ({ status: 'ok', uptime: Math.round(process.uptime()), directory: directoryStatus().status }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    directory: directoryStatus().status,
+  }));
 
   // Root index: this is an API, so say so rather than returning a bare 404.
   app.get('/', async () => ({
@@ -95,19 +116,82 @@ export async function buildApp() {
     docs: 'All endpoints live under /api/v1. Authenticated ones need "Authorization: Bearer <token>" from /auth/otp/verify.',
     endpoints: {
       auth: ['POST /auth/otp/request', 'POST /auth/otp/verify', 'GET /auth/me', 'PATCH /auth/me'],
-      catalogue: ['GET /specialties', 'GET /doctors', 'GET /doctors/:slug', 'GET /doctors/:slug/slots', 'GET /doctors/:slug/reviews', 'GET /facilities', 'GET /facilities/:slug', 'GET /search?q='],
-      booking: ['POST /slots/:id/hold', 'POST /appointments', 'GET /appointments', 'GET /appointments/:id', 'PATCH /appointments/:id/cancel', 'PATCH /appointments/:id/reschedule', 'GET|POST /appointments/:id/messages'],
-      pharmacy: ['GET /medicine-categories', 'GET /medicines', 'GET /medicines/:slug', 'POST /orders', 'GET /orders', 'GET /orders/:reference', 'PATCH /orders/:reference/cancel'],
-      labs: ['GET /lab-categories', 'GET /lab-tests', 'GET /lab-tests/:slug', 'GET /lab-collection-slots'],
-      records: ['GET /records', 'GET /records/:id', 'POST /records', 'DELETE /records/:id', 'GET /access', 'POST /access', 'PATCH /access/:id/revoke'],
-      account: ['GET /me/saved', 'PUT|DELETE /me/saved/:kind/:slug', 'GET|POST /me/addresses', 'PATCH /me/addresses/:id/default', 'DELETE /me/addresses/:id', 'GET /me/notifications', 'GET /me/summary'],
-      site: ['GET /site/settings', 'GET /site/stats', 'GET /content/:page', 'GET /testimonials?audience=', 'GET /plans?audience=', 'GET /catalogue/routing'],
-      content: ['GET /articles', 'GET /articles/:slug', 'POST /doctors/:slug/reviews', 'POST /reviews/:id/helpful', 'POST /leads', 'POST /triage'],
+      catalogue: [
+        'GET /specialties',
+        'GET /doctors',
+        'GET /doctors/:slug',
+        'GET /doctors/:slug/slots',
+        'GET /doctors/:slug/reviews',
+        'GET /facilities',
+        'GET /facilities/:slug',
+        'GET /search?q=',
+      ],
+      booking: [
+        'POST /slots/:id/hold',
+        'POST /appointments',
+        'GET /appointments',
+        'GET /appointments/:id',
+        'PATCH /appointments/:id/cancel',
+        'PATCH /appointments/:id/reschedule',
+        'GET|POST /appointments/:id/messages',
+      ],
+      pharmacy: [
+        'GET /medicine-categories',
+        'GET /medicines',
+        'GET /medicines/:slug',
+        'POST /orders',
+        'GET /orders',
+        'GET /orders/:reference',
+        'PATCH /orders/:reference/cancel',
+      ],
+      labs: [
+        'GET /lab-categories',
+        'GET /lab-tests',
+        'GET /lab-tests/:slug',
+        'GET /lab-collection-slots',
+      ],
+      records: [
+        'GET /records',
+        'GET /records/:id',
+        'POST /records',
+        'DELETE /records/:id',
+        'GET /access',
+        'POST /access',
+        'PATCH /access/:id/revoke',
+      ],
+      account: [
+        'GET /me/saved',
+        'PUT|DELETE /me/saved/:kind/:slug',
+        'GET|POST /me/addresses',
+        'PATCH /me/addresses/:id/default',
+        'DELETE /me/addresses/:id',
+        'GET /me/notifications',
+        'GET /me/summary',
+      ],
+      site: [
+        'GET /site/settings',
+        'GET /site/stats',
+        'GET /content/:page',
+        'GET /testimonials?audience=',
+        'GET /plans?audience=',
+        'GET /catalogue/routing',
+      ],
+      content: [
+        'GET /articles',
+        'GET /articles/:slug',
+        'POST /doctors/:slug/reviews',
+        'POST /reviews/:id/helpful',
+        'POST /leads',
+        'POST /triage',
+      ],
     },
   }));
 
   app.setNotFoundHandler(async (request, reply) =>
-    reply.status(404).send({ error: 'not_found', message: `No route for ${request.method} ${request.url}. See GET / for the endpoint list.` }),
+    reply.status(404).send({
+      error: 'not_found',
+      message: `No route for ${request.method} ${request.url}. See GET / for the endpoint list.`,
+    }),
   );
 
   await app.register(authRoutes, { prefix: '/api/v1/auth' });

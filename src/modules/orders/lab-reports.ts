@@ -47,7 +47,8 @@ const RANGES: Record<string, Range> = {
 };
 
 /** Deterministic 0–1 value per order + parameter, so a report never changes between reads. */
-const unit = (seed: string) => parseInt(createHash('sha1').update(seed).digest('hex').slice(0, 8), 16) / 0xffffffff;
+const unit = (seed: string) =>
+  parseInt(createHash('sha1').update(seed).digest('hex').slice(0, 8), 16) / 0xffffffff;
 
 function findingFor(seed: string, name: string) {
   const range = RANGES[name];
@@ -55,14 +56,24 @@ function findingFor(seed: string, name: string) {
   const r = unit(seed);
   const span = range.high - range.low;
   // Mostly in range; roughly one value in eight lands just outside it.
-  const value = r < 0.06 ? range.low - span * 0.08 : r > 0.94 ? range.high + span * 0.12 : range.low + span * (0.15 + 0.7 * unit(`${seed}:v`));
+  const value =
+    r < 0.06
+      ? range.low - span * 0.08
+      : r > 0.94
+        ? range.high + span * 0.12
+        : range.low + span * (0.15 + 0.7 * unit(`${seed}:v`));
   const shown = Math.max(0, value).toFixed(range.decimals ?? 0);
   return {
     name,
     value: shown,
     unit: range.unit,
     range: `${range.low} – ${range.high}`,
-    flag: value < range.low ? ('low' as const) : value > range.high ? ('high' as const) : ('normal' as const),
+    flag:
+      value < range.low
+        ? ('low' as const)
+        : value > range.high
+          ? ('high' as const)
+          : ('normal' as const),
   };
 }
 
@@ -80,8 +91,12 @@ export async function materializeLabReports(userId: string) {
   });
   for (const order of due) {
     const tests = await LabTestModel.find({ slug: { $in: order.items.map((i) => i.slug) } }).lean();
-    const params = [...new Set(tests.flatMap((t) => t.parameterGroups.flatMap((g) => g.parameters ?? [])))];
-    const findings = params.map((name) => findingFor(`${order.reference}:${name}`, name)).filter((f): f is NonNullable<typeof f> => f !== null);
+    const params = [
+      ...new Set(tests.flatMap((t) => t.parameterGroups.flatMap((g) => g.parameters ?? []))),
+    ];
+    const findings = params
+      .map((name) => findingFor(`${order.reference}:${name}`, name))
+      .filter((f): f is NonNullable<typeof f> => f !== null);
     const flagged = findings.filter((f) => f.flag !== 'normal');
     const collected = new Date(order.pickup!.date!);
 
@@ -91,7 +106,11 @@ export async function materializeLabReports(userId: string) {
       title: tests.map((t) => t.name).join(' + ') || 'Lab report',
       // Orders from before labs were assigned were all processed at the Koramangala reference lab.
       doctorName: order.lab?.pathologist || 'Dr. Kavitha Rao, MD Pathology',
-      facility: order.lab?.name ? (order.lab.name.includes(order.lab.area ?? '') ? order.lab.name : `${order.lab.name}, ${order.lab.area}`) : 'Curxx Diagnostics Reference Lab, Koramangala',
+      facility: order.lab?.name
+        ? order.lab.name.includes(order.lab.area ?? '')
+          ? order.lab.name
+          : `${order.lab.name}, ${order.lab.area}`
+        : 'Curxx Diagnostics Reference Lab, Koramangala',
       date: new Date(collected.getTime() + REPORT_TURNAROUND_MS),
       summary: findings.length
         ? `${findings.length - flagged.length} of ${findings.length} measured parameters within range.${flagged.length ? ` Review: ${flagged.map((f) => f.name).join(', ')}.` : ''}`
