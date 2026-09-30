@@ -2,14 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { FACILITY_TYPES } from '../../db/data/facility-network.js';
-import { notFound } from '../../lib/errors.js';
 import { distanceKm, locate } from '../../lib/geo.js';
 import { CATALOGUE_CACHE, escapeRegex, pageQuery, paged, toDto } from '../../lib/http.js';
 import { bookingModeOf } from '../../lib/booking-mode.js';
 import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
+import { facilityDetail } from '../doctar/detail.js';
+import { directoryUnavailable } from '../doctar/directory.js';
+import { Doctors, Facilities, notListed } from '../doctar/store.js';
 import { SlotModel } from '../../models/slot.model.js';
 
 const TYPE_BY_SLUG = new Map(FACILITY_TYPES.map((t) => [t.slug, t]));
@@ -43,11 +43,11 @@ const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) =>
   booking: bookingModeOf({ source: d.source, bookable: d.bookable, schedule }),
 });
 
-/** One page of facilities ordered by real distance from a point. Cities have a few hundred at most. */
-async function nearest(filter: Record<string, unknown>, origin: { lat: number; lng: number }, page: number, limit: number) {
-  const all = await FacilityModel.find(filter).limit(1000).lean();
+/** One page of facilities ordered by real distance from a point (a city has a few thousand at most). */
+async function nearest(filter: Record<string, unknown>, origin: { lat: number; lng: number }, page: number, limit: number): Promise<Record<string, any>[]> {
+  const all = await Facilities.find(filter, { limit: 5000 });
   return all
-    .map((f) => ({ ...f, distanceKm: f.geo?.lat != null && f.geo?.lng != null ? distanceKm(origin, { lat: f.geo.lat, lng: f.geo.lng }) : f.distanceKm }))
+    .map((f): Record<string, any> => ({ ...f, distanceKm: f.geo?.lat != null && f.geo?.lng != null ? distanceKm(origin, { lat: f.geo.lat, lng: f.geo.lng }) : f.distanceKm }))
     .sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0) || a.distanceKm - b.distanceKm || a.slug.localeCompare(b.slug))
     .slice((page - 1) * limit, page * limit);
 }
@@ -81,23 +81,21 @@ export async function facilityRoutes(app: FastifyInstance) {
     const point = query.lat !== undefined && query.lng !== undefined ? { lat: query.lat, lng: query.lng } : query.pincode ? locate(query.pincode) : null;
     const origin = sort === 'distance' ? point : null;
     const [items, total, areas, categories, departments] = await Promise.all([
-      origin ? nearest(filter, origin, page, limit) : FacilityModel.find(filter).sort({ ...SORTS[sort], slug: 1 }).skip((page - 1) * limit).limit(limit).lean(),
-      FacilityModel.countDocuments(filter),
-      FacilityModel.aggregate<{ _id: string; count: number }>([{ $match: base }, { $group: { _id: '$area', count: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
-      FacilityModel.aggregate<{ _id: string; count: number }>([{ $match: { city } }, { $group: { _id: '$category', count: { $sum: 1 } } }]),
-      FacilityModel.aggregate<{ _id: string; count: number }>([{ $match: base }, { $unwind: '$departments' }, { $group: { _id: '$departments', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
+      origin ? nearest(filter, origin, page, limit) : Facilities.find(filter, { sort: { ...SORTS[sort], slug: 1 }, skip: (page - 1) * limit, limit }),
+      Facilities.count(filter),
+      Facilities.countBy('area', base).then((rows) => rows.filter((r) => r._id).sort((a, b) => String(a._id).localeCompare(String(b._id)))),
+      Facilities.countBy('category', { city }),
+      Facilities.countBy('departments', base).then((rows) => rows.filter((r) => r._id).sort((a, b) => b.count - a.count || String(a._id).localeCompare(String(b._id)))),
     ]);
-    const doctorCounts = await DoctorModel.aggregate<{ _id: string; count: number }>([
-      { $match: { facilitySlug: { $in: items.map((f) => f.slug) } } },
-      { $group: { _id: '$facilitySlug', count: { $sum: 1 } } },
-    ]);
+    const doctorCounts = await Doctors.countBy('facilitySlug', { facilitySlug: { $in: items.map((f) => f.slug) } });
     const doctorsAt = new Map(doctorCounts.map((d) => [d._id, d.count]));
     const byCategory = new Map(categories.map((c) => [c._id, c.count]));
 
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
-      ...paged(items.map((f) => ({ ...toDto(f), doctorCount: doctorsAt.get(f.slug) ?? 0 })), total, page, limit),
+      ...paged(items.map((f) => ({ ...toDto(f as { _id: unknown }), doctorCount: doctorsAt.get(f.slug) ?? 0 })), total, page, limit),
       city,
+      unavailable: directoryUnavailable(),
       facets: {
         areas: areas.map((a) => ({ value: a._id, count: a.count })),
         /** Departments offered in this city (and type), most common first. */
@@ -110,10 +108,12 @@ export async function facilityRoutes(app: FastifyInstance) {
 
   app.get('/facilities/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
-    const facility = await FacilityModel.findOne({ slug }).lean();
-    if (!facility) throw notFound('Hospital or clinic not found');
+    const found = await Facilities.findOne({ slug });
+    if (!found) throw notListed('Hospital or clinic not found');
+    // Doctar hospitals: refreshed from Doctar with the page-only fields (About, services, gallery).
+    const facility = await facilityDetail(found);
 
-    const doctors = await DoctorModel.find({ facilitySlug: slug }).sort({ rating: -1, reviewCount: -1 }).lean();
+    const doctors = await Doctors.find({ facilitySlug: slug }, { sort: { rating: -1, reviewCount: -1, rankScore: -1, slug: 1 } });
     await ensureSlots(doctors as never);
     const next = await SlotModel.aggregate<{ _id: string; startsAt: Date }>([
       { $match: { doctorSlug: { $in: doctors.map((d) => d.slug) }, startsAt: { $gte: new Date() }, ...bookableSlot() } },
@@ -122,10 +122,7 @@ export async function facilityRoutes(app: FastifyInstance) {
     ]);
     const nextBySlug = new Map(next.map((n) => [n._id, n.startsAt]));
     for (const [doctorSlug, open] of await openRequestSlots(doctors as never)) if (open[0]) nextBySlug.set(doctorSlug, open[0].startsAt);
-    const nearby = await FacilityModel.find({ city: facility.city, slug: { $ne: slug }, category: facility.category }, { slug: 1, name: 1, area: 1, category: 1, rating: 1, type: 1 })
-      .sort({ rating: -1 })
-      .limit(4)
-      .lean();
+    const nearby = await Facilities.find({ city: facility.city, slug: { $ne: slug }, category: facility.category }, { projection: { slug: 1, name: 1, area: 1, category: 1, rating: 1, type: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 4 });
 
     reply.header('cache-control', CATALOGUE_CACHE);
     return {

@@ -53,8 +53,29 @@ The seed doctors, facilities, reviews and testimonials are generated examples, f
 `SHOW_SAMPLE_DATA=true`, every public route leaves them out: only imported (`source`) and admin-added
 (`managed`) records show, and the sync never writes, restores or deletes sample records. The rule is a
 Mongoose plugin on the models (`lib/sample-data.ts`), so new routes get it for free; the admin panel, the
-sync and `import:doctar` see everything through `withSampleData`. Seeded marketing claims (site settings of
+sync and the scripts see everything through `withSampleData`. Seeded marketing claims (site settings of
 kind `claim`) also stay hidden until someone saves them in the admin. Tests run with sample data on.
+
+## Doctar directory
+
+Doctors and hospitals from Doctar are read live from Doctar's database (`DOCTAR_DB_URL`, read-only), not
+copied into Curxx (`src/modules/doctar`):
+
+- `directory.ts` builds a lean in-memory listing index (small projections, no bios) by paging through Doctar,
+  rebuilds it every `DOCTAR_REFRESH_MINUTES` (default 60) and saves the last good copy gzipped in
+  `directory_cache`, so a restart serves listings at once even if Doctar is down. Peak memory is logged.
+- `mapping.ts` decides what's listed and how Doctar fields map to Curxx's doctor/facility shapes.
+- `store.ts` (`Doctors`, `Facilities`) is what public routes read: Curxx's own records (MongoDB) plus the
+  directory, with the same MongoDB filters and sorts (`lib/query-match.ts`).
+- `detail.ts` reads a profile's page-only fields from Doctar, cached (`DOCTAR_DETAIL_TTL_SECONDS`).
+- Curxx-only settings (hide, rank, feature, booking, contact overrides) live in `doctar_overlays`, edited in
+  the admin panel (Doctar directory, Rankings).
+- While no copy is loaded, listings say "temporarily unavailable" and missing profiles answer 503, not 404.
+
+Settings: `DOCTAR_VERIFIED_ONLY`, `DOCTAR_REFRESH_MINUTES`, `DOCTAR_PAGE_SIZE`, `DOCTAR_MAX_DOCTORS`,
+`DOCTAR_TIMEOUT_MS`, `DOCTAR_DETAIL_TTL_SECONDS`, `DOCTAR_POOL_SIZE`, `DOCTAR_ENABLED=false` (see
+`config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
+removes the copies left by the old import.
 
 ## Sign-in
 

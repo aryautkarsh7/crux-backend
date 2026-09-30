@@ -3,11 +3,10 @@ import { z } from 'zod';
 import { conditions as allConditions, resolveCitySlug } from '../../lib/catalogue-store.js';
 import { escapeRegex, toDto } from '../../lib/http.js';
 import { ArticleModel } from '../../models/article.model.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { MedicineModel } from '../../models/medicine.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 /** One query across the whole catalogue, for the header search. */
 export async function searchRoutes(app: FastifyInstance) {
@@ -30,10 +29,10 @@ export async function searchRoutes(app: FastifyInstance) {
     const focusSlugs = catalogue.flatMap((s) => s.subSpecialties.filter((sub) => re.test(sub.name) || re.test(sub.description ?? '')).map((sub) => sub.slug));
 
     const [doctors, medicines, labTests, facilities, articles] = await Promise.all([
-      DoctorModel.find({ city, $or: [{ name: re }, { clinicName: re }, { title: re }, { area: re }, { specialty: { $in: specialties.map((s) => s.slug) } }, { focusAreas: { $in: focusSlugs } }] }).sort({ rating: -1 }).limit(5).lean(),
+      Doctors.find({ city, $or: [{ name: re }, { clinicName: re }, { title: re }, { area: re }, { specialty: { $in: specialties.map((s) => s.slug) } }, { focusAreas: { $in: focusSlugs } }] }, { sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 5 }),
       MedicineModel.find({ $or: [{ name: re }, { composition: re }, { uses: re }] }, { slug: 1, name: 1, subtitle: 1, price: 1, mrp: 1, icon: 1, imageUrl: 1, rxRequired: 1 }).sort({ popularity: -1 }).limit(5).lean(),
       LabTestModel.find({ $or: [{ name: re }, { covers: re }, { 'parameterGroups.parameters': re }] }, { slug: 1, name: 1, kind: 1, price: 1, mrp: 1, testsIncluded: 1 }).sort({ popularity: -1 }).limit(5).lean(),
-      FacilityModel.find({ city, $or: [{ name: re }, { area: re }, { departments: re }, { category: re }] }, { slug: 1, name: 1, type: 1, category: 1, area: 1, rating: 1 }).sort({ rating: -1 }).limit(4).lean(),
+      Facilities.find({ city, $or: [{ name: re }, { area: re }, { departments: re }, { category: re }] }, { projection: { slug: 1, name: 1, type: 1, category: 1, area: 1, rating: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 4 }),
       ArticleModel.find({ $or: [{ title: re }, { excerpt: re }, { tags: re }] }, { slug: 1, title: 1, category: 1, readMinutes: 1 }).sort({ publishedAt: -1 }).limit(3).lean(),
     ]);
 

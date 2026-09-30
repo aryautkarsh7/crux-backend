@@ -4,10 +4,10 @@ import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { ensureSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { toDto } from '../../lib/http.js';
-import { DoctorModel } from '../../models/doctor.model.js';
 import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { ADVICE, RED_FLAGS, RULES } from './triage.rules.js';
+import { Doctors, type Doc } from '../doctar/store.js';
 
 const triageBody = z.object({
   symptoms: z.string().trim().min(3, 'Describe your symptoms in a few words').max(1000),
@@ -83,8 +83,8 @@ export async function triageRoutes(app: FastifyInstance) {
         // Doctors in the patient's city who consult by video, best-rated and focus-matched first.
         const city = resolveCitySlug(input.city) ?? 'bangalore';
         const base = { specialty: specialtySlug, 'schedule.video': { $ne: 'none' } };
-        let candidates = await DoctorModel.find({ ...base, city }).sort({ rating: -1, reviewCount: -1 }).limit(12).lean();
-        if (!candidates.length) candidates = await DoctorModel.find(base).sort({ rating: -1, reviewCount: -1 }).limit(12).lean();
+        let candidates = await Doctors.find({ ...base, city }, { sort: { rating: -1, reviewCount: -1, slug: 1 }, limit: 12 });
+        if (!candidates.length) candidates = await Doctors.find(base, { sort: { rating: -1, reviewCount: -1, slug: 1 }, limit: 12 });
         if (focusSlug) candidates.sort((a, b) => Number((b.focusAreas ?? []).includes(focusSlug)) - Number((a.focusAreas ?? []).includes(focusSlug)));
         await ensureSlots(candidates as never);
         const next = await SlotModel.aggregate<{ _id: string; startsAt: Date }>([
@@ -92,7 +92,7 @@ export async function triageRoutes(app: FastifyInstance) {
           { $group: { _id: '$doctorSlug', startsAt: { $min: '$startsAt' } } },
         ]);
         const nextBySlug = new Map(next.map((n) => [n._id, n.startsAt]));
-        return candidates.filter((c) => nextBySlug.has(c.slug)).slice(0, 3).map((c) => ({ ...c, nextSlotAt: nextBySlug.get(c.slug) }));
+        return candidates.filter((c) => nextBySlug.has(c.slug)).slice(0, 3).map((c): Doc => ({ ...c, nextSlotAt: nextBySlug.get(c.slug) }));
       })(),
     ]);
     const focus = specialty?.subSpecialties.find((s) => s.slug === focusSlug) ?? null;

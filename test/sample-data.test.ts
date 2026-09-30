@@ -60,15 +60,15 @@ before(async () => {
   await app.ready();
   env.SHOW_SAMPLE_DATA = false;
   await cleanUp();
-  // An imported clinic and doctor, shaped like scripts/import-doctar.ts writes them.
+  // An imported clinic and doctor (any source except "doctar", whose records now come from the live directory).
   await FacilityModel.create({
     slug: CLINIC, name: 'Sampletest Clinic', shortName: 'Sampletest Clinic', type: 'clinic', category: 'Clinic', city: 'mumbai', area: 'Andheri West',
-    address: '1 Test Road, Andheri West, Mumbai', phone: '02212345678', rating: 0, reviewCount: 0, source: 'doctar', doctarId: 'sampletest-f1',
+    address: '1 Test Road, Andheri West, Mumbai', phone: '02212345678', rating: 0, reviewCount: 0, source: 'csv-import',
   });
   await DoctorModel.create({
     slug: IMPORTED, name: 'Dr. Sampletest Imported', qualification: 'MBBS, MD', title: 'General Physician', specialty: 'general-physician',
     city: 'mumbai', area: 'Andheri West', clinicName: 'Sampletest Clinic', facilitySlug: CLINIC, gender: 'female', experienceYears: 12, fee: 500, videoFee: 500,
-    rating: 0, reviewCount: 0, recommendPercent: 0, verified: false, bookable: false, feeVerified: false, source: 'doctar', doctarId: 'sampletest-d1',
+    rating: 0, reviewCount: 0, recommendPercent: 0, verified: false, bookable: false, feeVerified: false, source: 'csv-import',
     schedule: { days: [1, 2, 3, 4, 5, 6], sessions: [{ start: '10:00', end: '13:00' }], step: 30, video: 'none' },
   });
   const login = await call('POST', '/admin/auth/login', { body: { email: 'admin@curxx.test', password: 'test-admin-password' } });

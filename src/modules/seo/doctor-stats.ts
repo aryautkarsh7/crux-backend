@@ -11,10 +11,10 @@
 import { cities as allCities } from '../../lib/catalogue-store.js';
 import { bookingModeOf } from '../../lib/booking-mode.js';
 import { requestTimes, slotsForDay } from '../../lib/slot-gen.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
 import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
+import { directoryVersion } from '../doctar/directory.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 const DOCTOR_FIELDS = {
   slug: 1, name: 1, specialty: 1, city: 1, area: 1, fee: 1, videoFee: 1, feeVerified: 1, schedule: 1, freeVideo: 1, instant: 1,
@@ -42,8 +42,8 @@ function feeRange(docs: Lite[], fee: (d: Lite) => number): FeeRange | null {
   const priced = docs.filter((d) => fee(d) > 0);
   if (!priced.length) return null;
   const values = priced.map(fee);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = values.reduce((a, b) => Math.min(a, b));
+  const max = values.reduce((a, b) => Math.max(a, b));
   // Approximate when an unconfirmed fee sets either end of the range.
   const approx = priced.some((d) => d.feeVerified === false && (fee(d) === min || fee(d) === max));
   return { min, max, approx };
@@ -84,7 +84,7 @@ async function availabilityOf(docs: Lite[], now: Date) {
 
 const earliestOf = (docs: Lite[], avail: Map<string, Availability>) => {
   const times = docs.map((d) => avail.get(d.slug)?.next?.getTime()).filter((t): t is number => t !== undefined);
-  return times.length ? new Date(Math.min(...times)) : null;
+  return times.length ? new Date(times.reduce((a, b) => Math.min(a, b))) : null;
 };
 
 function core(docs: Lite[], avail: Map<string, Availability>) {
@@ -141,7 +141,7 @@ function groupBy<K extends string>(docs: Lite[], key: (d: Lite) => K) {
   for (const d of docs) {
     const k = key(d);
     if (!k) continue;
-    groups.set(k, [...(groups.get(k) ?? []), d]);
+    (groups.get(k) ?? groups.set(k, []).get(k)!).push(d);
   }
   return groups;
 }
@@ -156,7 +156,7 @@ const FEE_BANDS = [
 
 async function feeBands(docs: Lite[]) {
   const clinic = docs.filter(offersClinic).filter((d) => d.fee > 0);
-  const facilities = await FacilityModel.find({ slug: { $in: [...new Set(clinic.map((d) => d.facilitySlug).filter(Boolean))] } }, { slug: 1, category: 1 }).lean();
+  const facilities = await Facilities.find({ slug: { $in: [...new Set(clinic.map((d) => d.facilitySlug).filter(Boolean))] } }, { projection: { slug: 1, category: 1 } });
   const settingOf = new Map(facilities.map((f) => [f.slug, f.category ?? '']));
   return FEE_BANDS.map((band) => {
     const inBand = clinic.filter((d) => d.fee >= band.min && d.fee <= band.max);
@@ -172,7 +172,7 @@ async function compute(city: string | null, specialtySlug: string | null) {
   if (city) filter.city = city;
   if (specialtySlug) filter.specialty = specialtySlug;
   const [docs, specialtyDocs] = await Promise.all([
-    DoctorModel.find(filter, DOCTOR_FIELDS).lean() as unknown as Promise<Lite[]>,
+    Doctors.find(filter, { projection: DOCTOR_FIELDS }) as unknown as Promise<Lite[]>,
     SpecialtyModel.find({}, { slug: 1, name: 1, plural: 1, conditions: 1, whenToSee: 1, video: 1 }).lean(),
   ]);
   const cityList = allCities();
@@ -207,6 +207,8 @@ async function compute(city: string | null, specialtySlug: string | null) {
 
   const areaRows = city
     ? [...groupBy(docs, (d) => d.area)]
+        // Doctors with no known locality carry the city's name as their area: not a locality.
+        .filter(([name]) => name.toLowerCase() !== cityName(city).toLowerCase())
         .map(([name, group]) => {
           const locality = cityList.find((c) => c.slug === city)?.localities.find((l) => l.name.toLowerCase() === name.toLowerCase());
           return { name, slug: locality?.slug ?? null, count: group.length, clinicFee: feeRange(group.filter(offersClinic), (d) => d.fee) };
@@ -244,9 +246,15 @@ async function compute(city: string | null, specialtySlug: string | null) {
 export type DoctorStats = Awaited<ReturnType<typeof compute>>;
 
 const cache = new Map<string, { at: number; value: Promise<DoctorStats> }>();
+/** The Doctar directory version the cache was built from; a refresh starts it again. */
+let cacheVersion = -1;
 
 /** Cached for 10 minutes per scope; concurrent requests share one computation. */
 export function doctorStats(city: string | null, specialty: string | null) {
+  if (cacheVersion !== directoryVersion()) {
+    cache.clear();
+    cacheVersion = directoryVersion();
+  }
   const key = `${city ?? 'india'}|${specialty ?? '*'}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;

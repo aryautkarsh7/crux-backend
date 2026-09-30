@@ -1,12 +1,42 @@
 import type { City } from '../../db/data/cities.js';
 import { env } from '../../config/env.js';
 import { cities as allCities, conditions as allConditions, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
 import { SpecialtyModel, type Specialty } from '../../models/specialty.model.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const STATS_FIELDS = { fee: 1, videoFee: 1, schedule: 1, freeVideo: 1, rating: 1, reviewCount: 1, experienceYears: 1, gender: 1, bookable: 1, source: 1, feeVerified: 1 } as const;
+
+/** Fee, video, rating and experience figures for a set of doctors (averages skip missing values, like $avg). */
+function summarise(docs: Record<string, any>[]) {
+  const nums = (pick: (d: Record<string, any>) => unknown) => docs.map(pick).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const min = (xs: number[]) => (xs.length ? xs.reduce((a, b) => Math.min(a, b)) : null);
+  const max = (xs: number[]) => (xs.length ? xs.reduce((a, b) => Math.max(a, b)) : null);
+  const fees = nums((d) => d.fee);
+  const video = new Set(docs.filter((d) => d.schedule?.video !== 'none'));
+  const count = (test: (d: Record<string, any>) => boolean) => docs.filter(test).length;
+  return {
+    _id: null,
+    count: docs.length,
+    minFee: min(fees) as number,
+    maxFee: max(fees) as number,
+    avgFee: avg(fees) as number,
+    minVideo: min(nums((d) => (video.has(d) ? d.videoFee : null))) as number,
+    video: video.size,
+    free: count((d) => Boolean(d.freeVideo)),
+    // Doctors without reviews (e.g. Doctar doctors) have no rating yet.
+    rating: avg(nums((d) => (d.reviewCount > 0 ? d.rating : null))) as number,
+    experience: avg(nums((d) => d.experienceYears)) as number,
+    reviews: nums((d) => d.reviewCount).reduce((a, b) => a + b, 0),
+    female: count((d) => d.gender === 'female'),
+    // Bookable online (lib/booking-mode.ts): imported doctors only when IMPORTED_BOOKABLE is on.
+    bookable: count((d) => d.bookable !== false && (env.IMPORTED_BOOKABLE || !d.source)),
+    approxFees: count((d) => d.feeVerified === false),
+  };
+}
+
 const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 
 /**
@@ -20,33 +50,11 @@ export async function specialtyContent(specialty: Specialty, city: City, areaSlu
   if (locality) match.area = locality.name;
 
   const [statsRow, areaRows, cityRows, top, facilities, relatedDocs] = await Promise.all([
-    DoctorModel.aggregate<{ _id: null; count: number; minFee: number; maxFee: number; avgFee: number; minVideo: number; video: number; free: number; rating: number; experience: number; reviews: number; female: number; bookable: number; approxFees: number }>([
-      { $match: match },
-      {
-        $group: {
-          _id: null,
-          count: { $sum: 1 },
-          minFee: { $min: '$fee' },
-          maxFee: { $max: '$fee' },
-          avgFee: { $avg: '$fee' },
-          minVideo: { $min: { $cond: [{ $ne: ['$schedule.video', 'none'] }, '$videoFee', null] } },
-          video: { $sum: { $cond: [{ $ne: ['$schedule.video', 'none'] }, 1, 0] } },
-          free: { $sum: { $cond: ['$freeVideo', 1, 0] } },
-          // Doctors without reviews (e.g. new imports) have no rating yet; $avg skips the nulls.
-          rating: { $avg: { $cond: [{ $gt: ['$reviewCount', 0] }, '$rating', null] } },
-          experience: { $avg: '$experienceYears' },
-          reviews: { $sum: '$reviewCount' },
-          female: { $sum: { $cond: [{ $eq: ['$gender', 'female'] }, 1, 0] } },
-          // Bookable online (lib/booking-mode.ts): imported doctors only when IMPORTED_BOOKABLE is on.
-          bookable: { $sum: { $cond: [{ $and: [{ $ne: ['$bookable', false] }, env.IMPORTED_BOOKABLE ? true : { $eq: [{ $ifNull: ['$source', ''] }, ''] }] }, 1, 0] } },
-          approxFees: { $sum: { $cond: [{ $eq: ['$feeVerified', false] }, 1, 0] } },
-        },
-      },
-    ]),
-    DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { city: city.slug, specialty: specialty.slug } }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
-    DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { specialty: specialty.slug } }, { $group: { _id: '$city', count: { $sum: 1 } } }]),
-    DoctorModel.find({ ...match, reviewCount: { $gt: 0 } }, { slug: 1, name: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, fee: 1, feeVerified: 1 }).sort({ rating: -1, reviewCount: -1 }).limit(5).lean(),
-    FacilityModel.find({ city: city.slug, specialties: specialty.slug }, { slug: 1, name: 1, area: 1, type: 1 }).sort({ rating: -1 }).limit(6).lean(),
+    Doctors.find(match, { projection: STATS_FIELDS }).then((docs) => (docs.length ? [summarise(docs)] : [])),
+    Doctors.countBy('area', { city: city.slug, specialty: specialty.slug }),
+    Doctors.countBy('city', { specialty: specialty.slug }),
+    Doctors.find({ ...match, reviewCount: { $gt: 0 } }, { projection: { slug: 1, name: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, fee: 1, feeVerified: 1 }, sort: { rating: -1, reviewCount: -1, slug: 1 }, limit: 5 }),
+    Facilities.find({ city: city.slug, specialties: specialty.slug }, { projection: { slug: 1, name: 1, area: 1, type: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 6 }),
     SpecialtyModel.find({ slug: { $in: specialty.related ?? [] } }, { slug: 1, name: 1, plural: 1, icon: 1 }).lean(),
   ]);
 

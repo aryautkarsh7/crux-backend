@@ -5,10 +5,9 @@ import { cities as allCities, cityBySlug, conditionBySlug, conditions as allCond
 import { notFound } from '../../lib/errors.js';
 import { CATALOGUE_CACHE, escapeRegex, toDto } from '../../lib/http.js';
 import { ArticleModel } from '../../models/article.model.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 const cityQuery = z.object({ city: z.string().default('bangalore') });
 const cityOf = (raw: string) => {
@@ -54,7 +53,7 @@ export async function catalogueRoutes(app: FastifyInstance) {
 
     const [specialty, doctorCount, article] = await Promise.all([
       SpecialtyModel.findOne({ slug: condition.specialty }, { slug: 1, name: 1, plural: 1, icon: 1, subSpecialties: 1, video: 1 }).lean(),
-      DoctorModel.countDocuments({ city: city.slug, specialty: condition.specialty }),
+      Doctors.count({ city: city.slug, specialty: condition.specialty }),
       ArticleModel.findOne({ condition: condition.slug }, { slug: 1, title: 1, excerpt: 1, readMinutes: 1 }).lean(),
     ]);
     const focus = specialty?.subSpecialties.find((s) => s.slug === condition.focus);
@@ -97,17 +96,14 @@ export async function catalogueRoutes(app: FastifyInstance) {
 
     const departments = surgery.departments.map((d) => new RegExp(`^${escapeRegex(d)}`, 'i'));
     const [hospitals, surgeons, specialty] = await Promise.all([
-      FacilityModel.find(
+      Facilities.find(
         { city: city.slug, $or: [{ departments: { $in: departments } }, { specialties: surgery.specialty }], category: { $nin: ['Clinic', 'Diagnostic Center', 'Homeopathy Clinic', 'Primary Health Center'] } },
-        { slug: 1, name: 1, area: 1, category: 1, rating: 1, reviewCount: 1, nabh: 1, beds: 1, insurers: 1, emergency24x7: 1 },
-      )
-        .sort({ nabh: -1, rating: -1 })
-        .limit(6)
-        .lean(),
-      DoctorModel.find({ city: city.slug, specialty: surgery.specialty }, { slug: 1, name: 1, title: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, photoUrl: 1, qualification: 1, fee: 1 })
-        .sort({ experienceYears: -1, rating: -1 })
-        .limit(4)
-        .lean(),
+        { projection: { slug: 1, name: 1, area: 1, category: 1, rating: 1, reviewCount: 1, nabh: 1, beds: 1, insurers: 1, emergency24x7: 1 }, sort: { nabh: -1, rating: -1, slug: 1 }, limit: 6 },
+      ),
+      Doctors.find(
+        { city: city.slug, specialty: surgery.specialty },
+        { projection: { slug: 1, name: 1, title: 1, experienceYears: 1, rating: 1, reviewCount: 1, area: 1, clinicName: 1, photoUrl: 1, qualification: 1, fee: 1 }, sort: { experienceYears: -1, rating: -1, slug: 1 }, limit: 4 },
+      ),
       SpecialtyModel.findOne({ slug: surgery.specialty }, { slug: 1, name: 1, plural: 1 }).lean(),
     ]);
     const [low, high] = cityCost(surgery.cost, city.tier);
@@ -184,8 +180,8 @@ export async function catalogueRoutes(app: FastifyInstance) {
     const [doctors, facilities, tests] = q.length < 2
       ? [[], [], []]
       : await Promise.all([
-          DoctorModel.find({ city, name: re }, { slug: 1, name: 1, specialty: 1, area: 1, photoUrl: 1 }).sort({ rating: -1 }).limit(4).lean(),
-          FacilityModel.find({ city, $or: [{ name: re }, { category: re }] }, { slug: 1, name: 1, area: 1, category: 1 }).sort({ rating: -1 }).limit(3).lean(),
+          Doctors.find({ city, name: re }, { projection: { slug: 1, name: 1, specialty: 1, area: 1, photoUrl: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 4 }),
+          Facilities.find({ city, $or: [{ name: re }, { category: re }] }, { projection: { slug: 1, name: 1, area: 1, category: 1 }, sort: { rating: -1, rankScore: -1, slug: 1 }, limit: 3 }),
           LabTestModel.find({ name: re }, { slug: 1, name: 1, kind: 1, price: 1 }).sort({ popularity: -1 }).limit(3).lean(),
         ]);
     const specialtyName = new Map(catalogue.map((s) => [s.slug, s.name]));

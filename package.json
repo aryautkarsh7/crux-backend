@@ -11,9 +11,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
-    "import:doctar": "tsx scripts/import-doctar.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
+    "test": "NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts",
+    "doctar:report": "tsx scripts/doctar-report.ts",
+    "doctar:remove-imports": "tsx scripts/remove-doctar-imports.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",

@@ -5,11 +5,13 @@ import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialti
 import { cities as allCities, cityBySlug, conditions as allConditions, resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { escapeRegex } from '../../lib/http.js';
-import { bookingModeOf } from '../../lib/booking-mode.js';
+import { bookingModeOf, type Bookable } from '../../lib/booking-mode.js';
 import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
+import { sortBy } from '../../lib/query-match.js';
+import { doctorDetail, facilityDetail } from '../doctar/detail.js';
+import { directoryUnavailable } from '../doctar/directory.js';
+import { Doctors, Facilities, notListed } from '../doctar/store.js';
 import { ReviewModel } from '../../models/review.model.js';
 import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
@@ -34,7 +36,8 @@ const listQuery = z.object({
 
 const SORTS: Record<string, Record<string, 1 | -1>> = {
   // Admin ranking (rankScore) first, then quality signals.
-  relevance: { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1 },
+  // Unrated doctors (most of the Doctar directory): Doctar-verified first, then the most experienced.
+  relevance: { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, doctarVerified: -1, experienceYears: -1 },
   fee_asc: { fee: 1 },
   fee_desc: { fee: -1 },
   experience: { experienceYears: -1 },
@@ -80,7 +83,7 @@ const dto = ({ _id, createdAt: _c, updatedAt: _u, schedule, slotsThrough: _t, ..
 export async function doctorRoutes(app: FastifyInstance) {
   // ---- Cities ----
   app.get('/cities', async (_request, reply) => {
-    const counts = await DoctorModel.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$city', count: { $sum: 1 } } }]);
+    const counts = await Doctors.countBy('city');
     const byCity = new Map(counts.map((c) => [c._id, c.count]));
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
@@ -94,8 +97,8 @@ export async function doctorRoutes(app: FastifyInstance) {
     const city = canonical ? cityBySlug(canonical) : undefined;
     if (!city) throw notFound('We don’t serve this city yet');
     const [areas, facilities] = await Promise.all([
-      DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: { city: city.slug } }, { $group: { _id: '$area', count: { $sum: 1 } } }]),
-      FacilityModel.countDocuments({ city: city.slug }),
+      Doctors.countBy('area', { city: city.slug }),
+      Facilities.count({ city: city.slug }),
     ]);
     const byArea = new Map(areas.map((a) => [a._id, a.count]));
     reply.header('cache-control', CATALOGUE_CACHE);
@@ -115,12 +118,14 @@ export async function doctorRoutes(app: FastifyInstance) {
 
     const [specialties, counts] = await Promise.all([
       SpecialtyModel.find().sort({ name: 1 }).lean(),
-      DoctorModel.aggregate<{ _id: string; count: number; video: number }>([
-        { $match: everywhere ? {} : { city } },
-        { $group: { _id: '$specialty', count: { $sum: 1 }, video: { $sum: { $cond: [{ $ne: ['$schedule.video', 'none'] }, 1, 0] } } } },
-      ]),
+      Doctors.find(everywhere ? {} : { city }, { projection: { specialty: 1, schedule: 1 } }),
     ]);
-    const bySpecialty = new Map(counts.map((c) => [c._id, c]));
+    const bySpecialty = new Map<string, { count: number; video: number }>();
+    for (const d of counts) {
+      const row = bySpecialty.get(d.specialty) ?? bySpecialty.set(d.specialty, { count: 0, video: 0 }).get(d.specialty)!;
+      row.count += 1;
+      if (d.schedule?.video !== 'none') row.video += 1;
+    }
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
       categories: [...new Set([...SPECIALTY_CATEGORIES, ...specialties.map((s) => s.category)])],
@@ -197,7 +202,7 @@ export async function doctorRoutes(app: FastifyInstance) {
 
     // Availability (and "now") narrows to doctors with a matching open slot, so counts and paging stay right.
     if (availability || free || sort === 'soonest') {
-      const candidates = await DoctorModel.find(filter, SLOT_FIELDS).lean();
+      const candidates = await Doctors.find(filter, { projection: SLOT_FIELDS });
       await ensureSlots(candidates as never, new Date(), daysNeeded);
       const slotMatch: Record<string, unknown> = { doctorSlug: { $in: candidates.map((c) => c.slug) }, startsAt: availabilityWindow(availability), ...bookableSlot() };
       if (mode || availability === 'now') slotMatch.mode = availability === 'now' ? 'video' : mode;
@@ -206,8 +211,8 @@ export async function doctorRoutes(app: FastifyInstance) {
       filter.slug = { $in: available };
     }
 
-    let doctors;
-    let total;
+    let doctors: Record<string, any>[];
+    let total: number;
     if (sort === 'soonest') {
       // Order by the earliest open slot rather than a stored field.
       const slotMatch: Record<string, unknown> = { doctorSlug: { $in: (filter.slug as { $in: string[] })?.$in ?? [] }, startsAt: availabilityWindow(availability), ...bookableSlot() };
@@ -216,25 +221,16 @@ export async function doctorRoutes(app: FastifyInstance) {
       const order = await SlotModel.aggregate<{ _id: string; at: Date }>([{ $match: slotMatch }, { $group: { _id: '$doctorSlug', at: { $min: '$startsAt' } } }, { $sort: { at: 1 } }]);
       total = order.length;
       const pageSlugs = order.slice((page - 1) * limit, page * limit).map((o) => o._id);
-      const docs = await DoctorModel.find({ slug: { $in: pageSlugs } }).lean();
+      const docs = await Doctors.find({ slug: { $in: pageSlugs } });
       doctors = pageSlugs.map((s) => docs.find((d) => d.slug === s)!).filter(Boolean);
     } else if (specialtyOrder.length > 1 && sort === 'relevance') {
-      [doctors, total] = await Promise.all([
-        DoctorModel.aggregate([
-          { $match: filter },
-          { $addFields: { _rank: { $let: { vars: { i: { $indexOfArray: [specialtyOrder, '$specialty'] } }, in: { $cond: [{ $lt: ['$$i', 0] }, 99, '$$i'] } } } } },
-          { $sort: { _rank: 1, rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } },
-          { $skip: (page - 1) * limit },
-          { $limit: limit },
-          { $project: { _rank: 0 } },
-        ]),
-        DoctorModel.countDocuments(filter),
-      ]);
+      // Specialties named in the search first, in that order, then the usual relevance order.
+      const all = await Doctors.find(filter);
+      const ranked = sortBy(all.map((d) => ({ ...d, _rank: specialtyOrder.includes(d.specialty) ? specialtyOrder.indexOf(d.specialty) : 99 })), { _rank: 1, rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 });
+      total = ranked.length;
+      doctors = ranked.slice((page - 1) * limit, page * limit).map(({ _rank: _r, ...d }) => d);
     } else {
-      [doctors, total] = await Promise.all([
-        DoctorModel.find(filter).sort({ ...SORTS[sort]!, slug: 1 }).skip((page - 1) * limit).limit(limit).lean(),
-        DoctorModel.countDocuments(filter),
-      ]);
+      [doctors, total] = await Promise.all([Doctors.find(filter, { sort: { ...SORTS[sort]!, slug: 1 }, skip: (page - 1) * limit, limit }), Doctors.count(filter)]);
     }
 
     // Fresh slots for the page, then one aggregate for every card's "next available" chip.
@@ -260,10 +256,10 @@ export async function doctorRoutes(app: FastifyInstance) {
 
     const facetBase: Record<string, unknown> = everywhere ? {} : { city };
     if (specialty && specialty !== 'doctors') facetBase.specialty = specialty;
-    const [areaFacet, languageFacet] = await Promise.all([
-      DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: facetBase }, { $group: { _id: '$area', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
-      DoctorModel.aggregate<{ _id: string; count: number }>([{ $match: facetBase }, { $unwind: '$languages' }, { $group: { _id: '$languages', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
-    ]);
+    const byCount = (rows: { _id: string; count: number }[]) => rows.filter((r) => r._id).sort((a, b) => b.count - a.count || String(a._id).localeCompare(String(b._id)));
+    const [areaRows, languageRows] = await Promise.all([Doctors.countBy('area', facetBase), Doctors.countBy('languages', facetBase)]);
+    const areaFacet = byCount(areaRows);
+    const languageFacet = byCount(languageRows);
 
     reply.header('cache-control', availability || free ? 'public, max-age=30' : CATALOGUE_CACHE);
     return {
@@ -286,22 +282,26 @@ export async function doctorRoutes(app: FastifyInstance) {
       mode: mode ?? null,
       city,
       matchedSpecialties,
+      /** Doctar's doctors aren't loaded right now: the list is incomplete, so the page says so. */
+      unavailable: directoryUnavailable(),
     };
   });
 
   app.get('/doctors/:slug', async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
-    const doctor = await DoctorModel.findOne({ slug }).lean();
-    if (!doctor) throw notFound('Doctor not found');
+    const found = await Doctors.findOne({ slug });
+    if (!found) throw notListed('Doctor not found');
+    // Doctar doctors: refreshed from Doctar for the profile (falls back to the listing copy).
+    const doctor = await doctorDetail(found);
 
     const [facility, rating, specialtyDoc, similar] = await Promise.all([
-      doctor.facilitySlug ? FacilityModel.findOne({ slug: doctor.facilitySlug }).lean() : null,
+      doctor.facilitySlug ? Facilities.findOne({ slug: doctor.facilitySlug }).then((f) => (f ? facilityDetail(f) : null)) : null,
       ReviewModel.aggregate<{ _id: null; average: number; total: number }>([
         { $match: { doctorSlug: slug } },
         { $group: { _id: null, average: { $avg: '$rating' }, total: { $sum: 1 } } },
       ]),
       SpecialtyModel.findOne({ slug: doctor.specialty }).lean(),
-      DoctorModel.find({ specialty: doctor.specialty, city: doctor.city, slug: { $ne: slug } }).sort({ rating: -1, reviewCount: -1 }).limit(3).lean(),
+      Doctors.find({ specialty: doctor.specialty, city: doctor.city, slug: { $ne: slug } }, { sort: { rating: -1, reviewCount: -1, rankScore: -1, slug: 1 }, limit: 3 }),
     ]);
 
     const focusNames = new Map((specialtyDoc?.subSpecialties ?? []).map((sub) => [sub.slug, sub.name]));
@@ -311,7 +311,7 @@ export async function doctorRoutes(app: FastifyInstance) {
       doctor: {
         ...dto(doctor),
         cityName: city?.name ?? doctor.city,
-        focusAreaNames: (doctor.focusAreas ?? []).map((f) => focusNames.get(f) ?? f),
+        focusAreaNames: ((doctor.focusAreas ?? []) as string[]).map((f) => focusNames.get(f) ?? f),
         services: (specialtyDoc?.subSpecialties ?? []).map((sub) => ({ ...sub, focus: (doctor.focusAreas ?? []).includes(sub.slug) })),
         specialtyName: specialtyDoc?.name ?? doctor.specialty,
         specialtyPlural: specialtyDoc?.plural ?? doctor.specialty,
@@ -334,9 +334,9 @@ export async function doctorRoutes(app: FastifyInstance) {
       days: z.coerce.number().int().min(1).max(14).default(7),
     }).parse(request.query);
 
-    const doctor = await DoctorModel.findOne({ slug }, SLOT_FIELDS).lean();
-    if (!doctor) throw notFound('Doctor not found');
-    const booking = bookingModeOf(doctor);
+    const doctor = await Doctors.findOne({ slug }, SLOT_FIELDS);
+    if (!doctor) throw notListed('Doctor not found');
+    const booking = bookingModeOf(doctor as Bookable);
     if (booking === 'none') return { slots: [] };
     if (booking === 'request') {
       const open = (await openRequestSlots([doctor] as never, new Date(), Math.min(days, 7))).get(slug) ?? [];

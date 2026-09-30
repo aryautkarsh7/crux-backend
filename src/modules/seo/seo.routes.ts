@@ -4,7 +4,7 @@ import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { doctorStats } from './doctor-stats.js';
-import { sitemapData } from './sitemap.js';
+import { sitemapData, sitemapIndex, sitemapPart } from './sitemap.js';
 import { surgeryStats } from './surgery-stats.js';
 
 // Computed stats are cached for 10 minutes on the server; let the CDN keep them briefly too.
@@ -39,5 +39,19 @@ export async function seoRoutes(app: FastifyInstance) {
   app.get('/seo/sitemap', async (_request, reply) => {
     reply.header('cache-control', SEO_CACHE);
     return sitemapData();
+  });
+
+  /** The sitemap without the doctor and hospital lists (those can pass 50,000 URLs), plus their counts. */
+  app.get('/seo/sitemap/index', async (_request, reply) => {
+    reply.header('cache-control', SEO_CACHE);
+    return sitemapIndex();
+  });
+
+  /** One sitemap file's worth of doctor or hospital pages. */
+  app.get('/seo/sitemap/:kind', async (request, reply) => {
+    const { kind } = z.object({ kind: z.enum(['doctors', 'facilities']) }).parse(request.params);
+    const { part } = z.object({ part: z.coerce.number().int().min(0).max(1000).default(0) }).parse(request.query);
+    reply.header('cache-control', SEO_CACHE);
+    return sitemapPart(kind, part);
   });
 }

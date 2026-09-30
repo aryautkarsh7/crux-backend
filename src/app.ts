@@ -25,6 +25,7 @@ import { searchRoutes } from './modules/search/search.routes.js';
 import { seoRoutes } from './modules/seo/seo.routes.js';
 import { siteRoutes } from './modules/site/site.routes.js';
 import { triageRoutes } from './modules/triage/triage.routes.js';
+import { directoryStatus, directoryUnavailable } from './modules/doctar/directory.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -75,7 +76,16 @@ export async function buildApp() {
     if (request.url.startsWith('/api/')) await ensureCatalogueFresh();
   });
 
-  app.get('/health', async () => ({ status: 'ok', uptime: Math.round(process.uptime()) }));
+  // While Doctar's doctors aren't loaded, pages built from the directory are incomplete: don't let a CDN keep them.
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (request.method === 'GET' && directoryUnavailable() && String(reply.getHeader('cache-control') ?? '').startsWith('public')) {
+      reply.header('cache-control', 'no-store');
+      reply.header('x-directory', 'unavailable');
+    }
+    return payload;
+  });
+
+  app.get('/health', async () => ({ status: 'ok', uptime: Math.round(process.uptime()), directory: directoryStatus().status }));
 
   // Root index: this is an API, so say so rather than returning a bare 404.
   app.get('/', async () => ({

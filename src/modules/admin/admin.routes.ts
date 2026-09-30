@@ -30,6 +30,10 @@ import { SlotModel } from '../../models/slot.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { UserModel } from '../../models/user.model.js';
 import { resetSiteStats } from '../site/site.routes.js';
+import { doctarAdminRoutes } from '../doctar/admin.routes.js';
+import { liveDirectory, refreshOverlays } from '../doctar/directory.js';
+import { DoctarOverlayModel } from '../doctar/models.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 type Doc = Record<string, any>;
 
@@ -462,12 +466,13 @@ export async function adminRoutes(app: FastifyInstance) {
       if (q.type === 'doctors' && q.specialty) filter.specialty = q.specialty;
       if (q.type === 'facilities' && q.category) filter.category = q.category;
       if (q.q) filter.name = new RegExp(escapeRegex(q.q), 'i');
-      const model = RANKED[q.type] as Model<any>;
       const sort: Record<string, 1 | -1> = q.type === 'doctors' ? { rankScore: -1, recommendPercent: -1, rating: -1, reviewCount: -1, slug: 1 } : { rankScore: -1, rating: -1, slug: 1 };
-      const [items, total] = await Promise.all([
-        model.find(filter, { slug: 1, name: 1, area: 1, rank: 1, rating: 1, reviewCount: 1, specialty: 1, category: 1, type: 1, clinicName: 1 }).sort(sort).limit(200).lean(),
-        model.countDocuments(filter),
-      ]);
+      const projection = { slug: 1, name: 1, area: 1, rank: 1, rating: 1, reviewCount: 1, specialty: 1, category: 1, type: 1, clinicName: 1, source: 1 } as const;
+      // Doctors and hospitals: Curxx's own plus the Doctar directory, in the website's order.
+      const store = q.type === 'doctors' ? Doctors : q.type === 'facilities' ? Facilities : null;
+      const [items, total] = store
+        ? await Promise.all([store.find(filter, { projection, sort, limit: 200 }), store.count(filter)])
+        : await Promise.all([(RANKED[q.type] as Model<any>).find(filter, projection).sort(sort).limit(200).lean(), (RANKED[q.type] as Model<any>).countDocuments(filter)]);
       return { items: (items as Doc[]).map(toClient), total };
     });
 
@@ -480,9 +485,23 @@ export async function adminRoutes(app: FastifyInstance) {
         })
         .parse(request.body);
       const model = RANKED[body.type] as Model<any>;
-      const result = await model.bulkWrite(body.ranks.map((r) => ({ updateOne: { filter: { slug: r.slug }, update: { $set: { rank: r.rank, rankScore: rankScoreOf(r.rank) } } } })));
-      return { updated: result.modifiedCount ?? 0 };
+      // Doctar records keep their rank in an overlay (Doctar itself is never written to).
+      const live = body.type === 'doctors' ? liveDirectory().doctorBySlug : body.type === 'facilities' ? liveDirectory().facilityBySlug : null;
+      const doctar = body.ranks.flatMap((r) => {
+        const d = live?.get(r.slug);
+        return d?.source === 'doctar' ? [{ ...r, doctarId: String(d.doctarId), name: String(d.name) }] : [];
+      });
+      const own = body.ranks.filter((r) => !doctar.some((d) => d.slug === r.slug));
+      const result = own.length ? await model.bulkWrite(own.map((r) => ({ updateOne: { filter: { slug: r.slug }, update: { $set: { rank: r.rank, rankScore: rankScoreOf(r.rank) } } } }))) : null;
+      if (doctar.length) {
+        const kind = body.type === 'doctors' ? ('doctor' as const) : ('facility' as const);
+        await DoctarOverlayModel.bulkWrite(doctar.map((d) => ({ updateOne: { filter: { kind, doctarId: d.doctarId }, update: { $set: { rank: d.rank, slug: d.slug, name: d.name } }, upsert: true } })));
+        await refreshOverlays();
+      }
+      return { updated: (result?.modifiedCount ?? 0) + doctar.length };
     });
+
+    await doctarAdminRoutes(secured);
 
     const resourceOf = (name: string) => {
       const r = RESOURCES[name];

@@ -5,8 +5,8 @@
  */
 import { PROCEDURE_DIRECTORY } from '../../db/data/procedure-directory.js';
 import { cities as allCities, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
+import { directoryVersion } from '../doctar/directory.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 /** Specialties counted as surgeons: the six in the template's surgeon table, plus any "…-surgeon". */
 const SURGEON_TABLE = ['general-surgeon', 'orthopedist', 'urologist', 'gynecologist', 'ent-specialist', 'ophthalmologist'];
@@ -55,8 +55,8 @@ async function compute(city: string | null) {
   const surgeonFilter: Record<string, unknown> = {};
   if (city) surgeonFilter.city = city;
   const [hospitals, doctors] = await Promise.all([
-    FacilityModel.find(hospitalFilter, { slug: 1, name: 1, city: 1, area: 1, rating: 1, rankScore: 1, nabh: 1, beds: 1, departments: 1 }).sort({ rankScore: -1, rating: -1, slug: 1 }).lean(),
-    DoctorModel.find(surgeonFilter, { specialty: 1, city: 1, facilitySlug: 1, experienceYears: 1 }).lean(),
+    Facilities.find(hospitalFilter, { projection: { slug: 1, name: 1, city: 1, area: 1, rating: 1, rankScore: 1, nabh: 1, beds: 1, departments: 1 }, sort: { rankScore: -1, rating: -1, slug: 1 } }),
+    Doctors.find(surgeonFilter, { projection: { specialty: 1, city: 1, facilitySlug: 1, experienceYears: 1 } }),
   ]);
   const surgeons = doctors.filter((d) => isSurgical(d.specialty));
   const surgeonsAt = new Map<string, number>();
@@ -132,8 +132,13 @@ async function compute(city: string | null) {
 export type SurgeryStats = Awaited<ReturnType<typeof compute>>;
 
 const cache = new Map<string, { at: number; value: Promise<SurgeryStats> }>();
+let cacheVersion = -1;
 
 export function surgeryStats(city: string | null) {
+  if (cacheVersion !== directoryVersion()) {
+    cache.clear();
+    cacheVersion = directoryVersion();
+  }
   const key = city ?? 'india';
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;

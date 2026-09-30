@@ -6,10 +6,10 @@ import { notFound } from '../../lib/errors.js';
 import { CATALOGUE_CACHE, objectId, pageQuery, paged, toDto } from '../../lib/http.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
 import { ArticleModel } from '../../models/article.model.js';
-import { DoctorModel } from '../../models/doctor.model.js';
 import { LeadModel } from '../../models/lead.model.js';
 import { ReviewModel } from '../../models/review.model.js';
 import { UserModel } from '../../models/user.model.js';
+import { Doctors } from '../doctar/store.js';
 
 const reviewQuery = z.object({
   sort: z.enum(['recent', 'helpful', 'rating_high', 'rating_low']).default('recent'),
@@ -47,7 +47,7 @@ type Bylined = { author?: { slug?: string | null } | null };
 /** Articles keep their text; an author who isn't listed becomes the editorial team, with no profile link. */
 async function listedAuthors<T extends Bylined>(articles: T[]): Promise<T[]> {
   const slugs = [...new Set(articles.map((a) => a.author?.slug).filter((s): s is string => Boolean(s)))];
-  const listed = new Set(slugs.length ? ((await DoctorModel.distinct('slug', { slug: { $in: slugs } })) as string[]) : []);
+  const listed = new Set(slugs.length ? ((await Doctors.distinct('slug', { slug: { $in: slugs } })) as string[]) : []);
   return articles.map((a) => (a.author?.slug && !listed.has(a.author.slug) ? { ...a, author: EDITORIAL_TEAM } : a));
 }
 
@@ -78,7 +78,7 @@ export async function contentRoutes(app: FastifyInstance) {
     if (!article) throw notFound('Article not found');
     const [related, author] = await Promise.all([
       ArticleModel.find({ slug: { $ne: slug }, category: article.category }, { sections: 0 }).sort({ publishedAt: -1 }).limit(3).lean(),
-      article.author?.slug ? DoctorModel.findOne({ slug: article.author.slug }).lean() : null,
+      article.author?.slug ? Doctors.findOne({ slug: article.author.slug }) : null,
     ]);
     // Top up "related" from other categories so the rail is never empty.
     const more = related.length < 3
@@ -99,7 +99,7 @@ export async function contentRoutes(app: FastifyInstance) {
     const filter: Record<string, unknown> = { doctorSlug: slug };
     if (mode) filter.mode = mode;
     // Reviews only show for a doctor who is listed (not for hidden sample doctors).
-    if (!(await DoctorModel.exists({ slug }))) throw notFound('Doctor not found');
+    if (!(await Doctors.findOne({ slug }, { slug: 1 }))) throw notFound('Doctor not found');
 
     const [items, total, summary] = await Promise.all([
       ReviewModel.find(filter).sort(REVIEW_SORTS[sort]).skip((page - 1) * limit).limit(limit).lean(),
@@ -138,7 +138,7 @@ export async function contentRoutes(app: FastifyInstance) {
   app.post('/doctors/:slug/reviews', { preHandler: authenticate, config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
     const body = reviewBody.parse(request.body);
-    if (!(await DoctorModel.exists({ slug }))) throw notFound('Doctor not found');
+    if (!(await Doctors.findOne({ slug }, { slug: 1 }))) throw notFound('Doctor not found');
 
     const [user, visited] = await Promise.all([
       UserModel.findById(request.user.sub).lean(),

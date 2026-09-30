@@ -6,8 +6,8 @@ import { cities, conditions, surgeries, surgeryCategories } from '../../lib/cata
 import { env } from '../../config/env.js';
 import { CATALOGUE_CACHE } from '../../lib/http.js';
 import { sampleHidden } from '../../lib/sample-data.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
+import { directoryVersion } from '../doctar/directory.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { LabModel } from '../../models/lab.model.js';
 import { ReviewModel } from '../../models/review.model.js';
@@ -15,7 +15,7 @@ import { ContentModel, PlanModel, SiteSettingModel, TestimonialModel } from '../
 import { SpecialtyModel } from '../../models/specialty.model.js';
 
 const STATS_TTL_MS = 5 * 60 * 1000;
-let statsCache: { at: number; value: Awaited<ReturnType<typeof computeStats>> } | null = null;
+let statsCache: { at: number; version: number; value: Awaited<ReturnType<typeof computeStats>> } | null = null;
 
 /** Every number the website shows about itself, counted from the database. */
 async function computeStats() {
@@ -26,16 +26,16 @@ async function computeStats() {
     $or: [{ source: { $in: [null, ''] } }, ...(env.IMPORTED_BOOKABLE ? [{ source: { $nin: [null, ''] }, 'schedule.days.0': { $exists: true } }] : [])],
   };
   const [doctors, verifiedDoctors, instantDoctors, videoDoctors, freeVideoDoctors, bookableDoctors, facilities, hospitals, accreditedFacilities, emergencyFacilities, labs, labTests, specialties, reviews] = await Promise.all([
-    DoctorModel.countDocuments(),
-    DoctorModel.countDocuments({ verified: true }),
-    DoctorModel.countDocuments({ instant: true }),
-    DoctorModel.countDocuments(video),
-    DoctorModel.countDocuments({ ...video, freeVideo: true }),
-    DoctorModel.countDocuments(bookable),
-    FacilityModel.countDocuments(),
-    FacilityModel.countDocuments({ type: 'hospital' }),
-    FacilityModel.countDocuments({ nabh: true }),
-    FacilityModel.countDocuments({ emergency24x7: true }),
+    Doctors.count(),
+    Doctors.count({ verified: true }),
+    Doctors.count({ instant: true }),
+    Doctors.count(video),
+    Doctors.count({ ...video, freeVideo: true }),
+    Doctors.count(bookable),
+    Facilities.count(),
+    Facilities.count({ type: 'hospital' }),
+    Facilities.count({ nabh: true }),
+    Facilities.count({ emergency24x7: true }),
     LabModel.countDocuments(),
     LabTestModel.countDocuments(),
     SpecialtyModel.countDocuments(),
@@ -80,7 +80,7 @@ export async function siteRoutes(app: FastifyInstance) {
   });
 
   app.get('/site/stats', async (_request, reply) => {
-    if (!statsCache || Date.now() - statsCache.at > STATS_TTL_MS) statsCache = { at: Date.now(), value: await computeStats() };
+    if (!statsCache || Date.now() - statsCache.at > STATS_TTL_MS || statsCache.version !== directoryVersion()) statsCache = { at: Date.now(), version: directoryVersion(), value: await computeStats() };
     reply.header('cache-control', CATALOGUE_CACHE);
     return { stats: statsCache.value };
   });

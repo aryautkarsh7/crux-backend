@@ -6,10 +6,10 @@ import { objectId, toDto } from '../../lib/http.js';
 import { AccessGrantModel } from '../../models/access-grant.model.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
 import { ArticleModel } from '../../models/article.model.js';
-import { DoctorModel } from '../../models/doctor.model.js';
 import { HealthRecordModel } from '../../models/health-record.model.js';
 import { OrderModel } from '../../models/order.model.js';
 import { UserModel } from '../../models/user.model.js';
+import { Doctors } from '../doctar/store.js';
 
 const addressBody = z.object({
   label: z.string().trim().max(30).default('Home'),
@@ -33,7 +33,7 @@ export async function meRoutes(app: FastifyInstance) {
     const user = await UserModel.findById(request.user.sub, { savedDoctors: 1, savedArticles: 1 }).lean();
     if (!user) throw notFound('Account not found');
     const [doctors, articles] = await Promise.all([
-      DoctorModel.find({ slug: { $in: user.savedDoctors } }).lean(),
+      Doctors.find({ slug: { $in: user.savedDoctors } }),
       ArticleModel.find({ slug: { $in: user.savedArticles } }, { sections: 0 }).lean(),
     ]);
     return { doctors: doctors.map((d) => toDto(d)), articles: articles.map((a) => toDto(a)), slugs: { doctors: user.savedDoctors, articles: user.savedArticles } };
@@ -44,7 +44,7 @@ export async function meRoutes(app: FastifyInstance) {
 
   app.put('/saved/:kind/:slug', async (request) => {
     const { kind, slug } = savedParams.parse(request.params);
-    const exists = kind === 'doctors' ? await DoctorModel.exists({ slug }) : await ArticleModel.exists({ slug });
+    const exists = kind === 'doctors' ? await Doctors.findOne({ slug }, { slug: 1 }) : await ArticleModel.exists({ slug });
     if (!exists) throw notFound(kind === 'doctors' ? 'Doctor not found' : 'Article not found');
     const user = await UserModel.findByIdAndUpdate(request.user.sub, { $addToSet: { [savedField(kind)]: slug } }, { new: true }).lean();
     return { saved: true, slugs: { doctors: user?.savedDoctors ?? [], articles: user?.savedArticles ?? [] } };

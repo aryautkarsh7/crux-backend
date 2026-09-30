@@ -4,11 +4,10 @@ import { z } from 'zod';
 import { badRequest } from '../../lib/errors.js';
 import { CATALOGUE_CACHE } from '../../lib/http.js';
 import { InteractionModel, ReportModel, VideoModel } from '../../models/activity.model.js';
-import { DoctorModel } from '../../models/doctor.model.js';
-import { FacilityModel } from '../../models/facility.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { LabModel } from '../../models/lab.model.js';
 import { MedicineModel } from '../../models/medicine.model.js';
+import { Doctors, Facilities } from '../doctar/store.js';
 
 const TARGETS = ['doctor', 'facility', 'lab', 'lab-test', 'medicine', 'site'] as const;
 type Target = (typeof TARGETS)[number];
@@ -28,10 +27,10 @@ async function patientOf(request: FastifyRequest) {
 
 /** Name and city of the profile an action is about, looked up server-side (never trusted from the client). */
 async function describe(type: Target, slug: string) {
-  const projection = { name: 1, city: 1 };
+  const projection = { name: 1, city: 1 } as const;
   const doc =
-    type === 'doctor' ? await DoctorModel.findOne({ slug }, projection).lean()
-    : type === 'facility' ? await FacilityModel.findOne({ slug }, projection).lean()
+    type === 'doctor' ? await Doctors.findOne({ slug }, projection)
+    : type === 'facility' ? await Facilities.findOne({ slug }, projection)
     : type === 'lab' ? await LabModel.findOne({ slug }, projection).lean()
     : type === 'lab-test' ? await LabTestModel.findOne({ slug }, { name: 1 }).lean()
     : type === 'medicine' ? await MedicineModel.findOne({ slug }, { name: 1 }).lean()

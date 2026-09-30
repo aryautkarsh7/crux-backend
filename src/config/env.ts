@@ -79,10 +79,41 @@ function bookingRequests() {
   };
 }
 
+/**
+ * Doctar directory: doctors and hospitals read live from Doctar's database (read-only). All optional; bad
+ * values fall back to the defaults. Without DOCTAR_DB_URL (e.g. in tests) the directory is off.
+ */
+function doctarSettings() {
+  const int = (v: string | undefined, fallback: number, min: number, max: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) && v?.trim() ? Math.min(max, Math.max(min, Math.round(n))) : fallback;
+  };
+  const url = process.env.DOCTAR_DB_URL?.trim() || undefined;
+  const flag = (v?: string) => ['1', 'true', 'yes'].includes(String(v ?? '').trim().toLowerCase());
+  return {
+    DOCTAR_DB_URL: url,
+    /** On when DOCTAR_DB_URL is set, unless DOCTAR_ENABLED=false. */
+    DOCTAR_ENABLED: Boolean(url) && String(process.env.DOCTAR_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+    /** Only Doctar's admin-verified doctors (default: all doctors in Curxx's cities and specialties). */
+    DOCTAR_VERIFIED_ONLY: flag(process.env.DOCTAR_VERIFIED_ONLY),
+    /** Full rebuild of the listing index; Doctar has no updatedAt index yet, so no incremental refresh. */
+    DOCTAR_REFRESH_MINUTES: int(process.env.DOCTAR_REFRESH_MINUTES, 60, 5, 24 * 60),
+    /** Records per read while building the index (memory vs number of round trips). */
+    DOCTAR_PAGE_SIZE: int(process.env.DOCTAR_PAGE_SIZE, 1000, 100, 5000),
+    /** Cap on doctors held in memory (0 = no cap). */
+    DOCTAR_MAX_DOCTORS: int(process.env.DOCTAR_MAX_DOCTORS, 0, 0, 10_000_000),
+    DOCTAR_TIMEOUT_MS: int(process.env.DOCTAR_TIMEOUT_MS, 15_000, 1_000, 120_000),
+    /** How long a profile or hospital page read from Doctar is reused (served stale while refreshing). */
+    DOCTAR_DETAIL_TTL_SECONDS: int(process.env.DOCTAR_DETAIL_TTL_SECONDS, 600, 0, 24 * 3600),
+    DOCTAR_POOL_SIZE: int(process.env.DOCTAR_POOL_SIZE, 3, 1, 20),
+  };
+}
+
 export const env = {
   ...parsed.data,
   ...adminLogin(),
   ...bookingRequests(),
+  ...doctarSettings(),
   /**
    * The generated seed doctors, facilities, reviews and testimonials (see lib/sample-data.ts). Off by
    * default: the website then only shows imported and admin-added records. Tests and demos turn it on.
