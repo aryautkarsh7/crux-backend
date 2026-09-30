@@ -6,6 +6,9 @@
  *   and records without a name, qualification, clinic, valid experience or fee are skipped.
  * - No Doctar ratings or reviews; fees are "Approx." unless the doctor set them; doctors' own phones and
  *   emails are never read (Call uses the clinic's number); bios come from the website's template.
+ * - Speciality and department names lose scraped place tails ("Oral Surgeon In Kolkata" → "Oral Surgeon").
+ * - Hospital photos from Doctar (often scraped: adverts, unrelated close-ups) only with
+ *   DOCTAR_SHOW_FACILITY_PHOTOS; otherwise the website shows its usual placeholder.
  */
 import { describeSchedule, type Schedule, type Session } from '../../db/data/doctor-network.js';
 import { FACILITY_TYPES } from '../../db/data/facility-network.js';
@@ -431,7 +434,7 @@ export function weekly(
   };
 }
 
-// ---------------------------------------------------------------- Context (Curxx cities and specialties)
+// ---------------------------------------------------------------- Context (Curxx cities and specialties, settings)
 
 type City = { slug: string; name: string; aliases?: string[]; localities: { name: string }[] };
 type SpecialtyRef = { slug: string; name: string };
@@ -440,9 +443,21 @@ export type MappingContext = {
   cityBy: Map<string, City>;
   specialtyBy: Map<string, SpecialtyRef>;
   roleWords: Set<string>;
+  /** Every place name known (normalised): Curxx's cities and aliases, and the cities and locations Doctar uses. */
+  places: Set<string>;
+  /** Doctar's own hospital photos are shown (DOCTAR_SHOW_FACILITY_PHOTOS). */
+  facilityPhotos: boolean;
 };
 
-export function mappingContext(cities: City[], specialties: SpecialtyRef[]): MappingContext {
+/**
+ * `places`: the raw city / location names Doctar uses (any city, not only Curxx's), for cutting place tails
+ * off speciality names.
+ */
+export function mappingContext(
+  cities: City[],
+  specialties: SpecialtyRef[],
+  options: { places?: unknown[]; facilityPhotos?: boolean } = {},
+): MappingContext {
   const cityBy = new Map<string, City>();
   for (const c of cities)
     for (const k of [c.slug, c.name, ...(c.aliases ?? [])]) cityBy.set(norm(k), c);
@@ -463,12 +478,43 @@ export function mappingContext(cities: City[], specialties: SpecialtyRef[]): Map
       .flatMap((sp) => sp.name.toLowerCase().split(/[^a-z]+/))
       .filter((w) => w.length >= 7),
   ]);
-  return { cityBy, specialtyBy, roleWords };
+  const places = new Set(cityBy.keys());
+  for (const p of options.places ?? []) if (typeof p === 'string' && p.trim()) places.add(norm(p));
+  return {
+    cityBy,
+    specialtyBy,
+    roleWords,
+    places,
+    facilityPhotos: options.facilityPhotos === true,
+  };
 }
 
 /** Raw Doctar city strings (from `distinct`) that map onto a Curxx city: used to narrow the reads. */
 export const matchingPlaces = (ctx: MappingContext, raw: unknown[]) =>
   raw.filter((v): v is string => typeof v === 'string' && ctx.cityBy.has(norm(v)));
+
+/** A trailing "In <place>" (a full stop allowed), as scraped search pages add to speciality names. */
+const PLACE_TAIL = /^(.*\S)\s+in\s+([a-z][a-z .'-]*[a-z])\.?$/i;
+
+/**
+ * A speciality or department name without a scraped place tail: "Oral Surgeon In Kolkata" → "Oral Surgeon",
+ * "cancer surgeon in pimpri-chinchwad" → "cancer surgeon". Only a known place is cut, so "Blood In Urine"
+ * and "Problems In Elderly" stay as they are.
+ */
+export function withoutPlace(name: string, ctx: MappingContext) {
+  const m = name.trim().match(PLACE_TAIL);
+  return m && ctx.places.has(norm(m[2])) ? m[1]! : name;
+}
+
+/** A hospital's departments without place tails, each name once (whatever its case), at most 30. */
+function departmentsOf(value: unknown, ctx: MappingContext) {
+  const byKey = new Map<string, string>();
+  for (const d of scrubPracto(strings(value))) {
+    const name = withoutPlace(d, ctx);
+    if (!byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+  }
+  return [...byKey.values()].slice(0, 30);
+}
 
 /** A Curxx locality named in the text, else Doctar's locality when it reads like one, else ''. */
 function areaFor(city: City, locality: string, address = '') {
@@ -537,7 +583,7 @@ export function mapHospital(
     hours.sessions[0]!.end >= '23:59';
   const lat = Number(h.coordinates?.latitude);
   const lng = Number(h.coordinates?.longitude);
-  const departments = scrubPracto(strings(h.departments)).slice(0, 30);
+  const departments = departmentsOf(h.departments, ctx);
   const doc: FacilityDoc = {
     _id: h._id,
     doctarId: id,
@@ -574,7 +620,7 @@ export function mapHospital(
           .filter((s): s is string => Boolean(s)),
       ),
     ],
-    photoUrl: scrubPracto(text(h.coverImage) || text(h.logo)),
+    photoUrl: ctx.facilityPhotos ? scrubPracto(text(h.coverImage) || text(h.logo)) : '',
     tagline: '',
     // No invented ratings: unrated until patients review it on Curxx.
     rating: 0,
@@ -590,10 +636,12 @@ export function mapHospital(
         services: strings(h.services).slice(0, 30),
         amenities: strings(h.amenities).slice(0, 30),
         insurers: strings(h.insuranceAccepted).slice(0, 30),
-        gallery: (h.gallery ?? [])
-          .map((g) => text(g.url))
-          .filter(Boolean)
-          .slice(0, 12),
+        gallery: ctx.facilityPhotos
+          ? (h.gallery ?? [])
+              .map((g) => text(g.url))
+              .filter(Boolean)
+              .slice(0, 12)
+          : [],
       }),
     );
   } else Object.assign(doc, { about: '', services: [], amenities: [], insurers: [], gallery: [] });
@@ -637,8 +685,8 @@ export function mapDoctor(
   )
     return { skip: 'experience missing or invalid' };
   const specialty =
-    ctx.specialtyBy.get(norm(d.specialization)) ??
-    ctx.specialtyBy.get(norm(d.specializationList?.[0]));
+    ctx.specialtyBy.get(norm(withoutPlace(text(d.specialization), ctx))) ??
+    ctx.specialtyBy.get(norm(withoutPlace(text(d.specializationList?.[0]), ctx)));
   if (!specialty) return { skip: 'specialty not on Curxx' };
   const city = ctx.cityBy.get(norm(d.location));
   if (!city) return { skip: 'city not on Curxx' };

@@ -131,14 +131,21 @@ export const doctarSource = () => source;
 // ---------------------------------------------------------------- Build
 
 let context: { at: number; value: Promise<MappingContext> } | null = null;
-/** Curxx's cities and specialties for the mapping, reused for 10 minutes. */
+/** The city and location names Doctar uses (read by the last build), all of them places for the mapping. */
+let doctarPlaces: unknown[] = [];
+/** Curxx's cities and specialties, Doctar's place names and the settings, for the mapping; reused for 10 minutes. */
 export function currentMappingContext() {
   if (!context || Date.now() - context.at > 10 * 60_000) {
     context = {
       at: Date.now(),
       value: SpecialtyModel.find({}, { slug: 1, name: 1 })
         .lean()
-        .then((specialties) => mappingContext(allCities(), specialties)),
+        .then((specialties) =>
+          mappingContext(allCities(), specialties, {
+            places: doctarPlaces,
+            facilityPhotos: env.DOCTAR_SHOW_FACILITY_PHOTOS,
+          }),
+        ),
     };
     context.value.catch(() => (context = null));
   }
@@ -197,18 +204,17 @@ export async function buildIndex(src: DoctarSource): Promise<Index> {
     peakHeap = Math.max(peakHeap, m.heapUsed);
   };
   sample();
+  // Every place Doctar names. Only those spelled like a Curxx city are read (indexed on city / location), but
+  // all of them are places the mapping cuts off speciality names ("Oral Surgeon In Agra" → "Oral Surgeon").
+  const [hospitalCities, doctorLocations] = await Promise.all([
+    retry('hospital cities', () => src.distinct('hospitals', 'city')),
+    retry('doctor locations', () => src.distinct('doctors', 'location')),
+  ]);
+  doctarPlaces = [...hospitalCities, ...doctorLocations];
   context = null;
   const ctx = await currentMappingContext();
-
-  // Only the places Doctar spells like a Curxx city are read (indexed on city / location).
-  const [hospitalPlaces, doctorPlaces] = await Promise.all([
-    retry('hospital cities', () => src.distinct('hospitals', 'city')).then((v) =>
-      matchingPlaces(ctx, v),
-    ),
-    retry('doctor locations', () => src.distinct('doctors', 'location')).then((v) =>
-      matchingPlaces(ctx, v),
-    ),
-  ]);
+  const hospitalPlaces = matchingPlaces(ctx, hospitalCities);
+  const doctorPlaces = matchingPlaces(ctx, doctorLocations);
 
   const skippedFacilities: Record<string, number> = {};
   const facilityById = new Map<string, FacilityDoc>();
@@ -451,6 +457,8 @@ export async function loadSavedIndex() {
   try {
     const cached = await loadCache();
     if (!cached || index) return false;
+    // A copy saved while Doctar's hospital photos were on doesn't bring them back once they're off.
+    if (!env.DOCTAR_SHOW_FACILITY_PHOTOS) for (const f of cached.facilities) f.photoUrl = '';
     index = cached;
     await publish();
     status = 'ready';

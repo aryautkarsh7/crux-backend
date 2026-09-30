@@ -42,6 +42,13 @@ describe('query-match', () => {
     assert.throws(() => matches(doc, { fee: { $where: 'x' } }), /unsupported/);
   });
 
+  test('a regex matches an array field when any element matches, as in MongoDB', () => {
+    assert.ok(matches(doc, { languages: /^hin/i }));
+    assert.ok(!matches(doc, { languages: /^tam/i }));
+    assert.ok(matches(doc, { languages: { $in: [/^tam/i, /^eng/i] } }));
+    assert.ok(matches(doc, { $or: [{ slug: /^x/ }, { languages: /hindi/i }] }));
+  });
+
   test('long $in lists use a set and still match array fields', () => {
     const many = Array.from({ length: 500 }, (_, i) => `slug-${i}`);
     assert.ok(!matches(doc, { slug: { $in: many } }));

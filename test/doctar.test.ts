@@ -19,7 +19,7 @@ import {
   useDoctarSource,
 } from '../src/modules/doctar/directory.js';
 import { DirectoryCacheModel, DoctarOverlayModel } from '../src/modules/doctar/models.js';
-import { placeName } from '../src/modules/doctar/mapping.js';
+import { mappingContext, placeName, withoutPlace } from '../src/modules/doctar/mapping.js';
 import { memoryDoctarSource, type DoctarSource } from '../src/modules/doctar/source.js';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
@@ -29,6 +29,10 @@ let admin = '';
 const id = () => new Types.ObjectId();
 const H1 = id();
 const H2 = id();
+const H3 = id();
+/** Doctar's scraped hospital photos (an advert banner, an unrelated close-up). */
+const COVER = 'https://doctar.example/scraped/banner-ad.jpg';
+const GALLERY = 'https://doctar.example/scraped/teeth-close-up.jpg';
 const D = {
   asha: id(),
   noGender: id(),
@@ -71,6 +75,19 @@ function fixtures() {
         locality: 'Andheri West',
         address: '1 Test Road, Andheri West, Mumbai',
         pincode: '400053',
+        // Scraped search-page tails: a Curxx city, a city only Doctar has, and real words after "In".
+        departments: [
+          'Oral Surgeon In Mumbai',
+          'Oral Surgeon',
+          'Hip Replacement Surgeon In Agra',
+          'Ivf Specialist In Kolkata',
+          'Blood In Urine',
+          'Dentist In Kolkata',
+          'oral surgeon in atlantis',
+        ],
+        coverImage: COVER,
+        logo: 'https://doctar.example/scraped/logo.png',
+        gallery: [{ url: GALLERY }],
       },
       {
         _id: H2,
@@ -79,6 +96,15 @@ function fixtures() {
         type: 'pharmacy',
         city: 'Mumbai',
         address: '2 Test Road, Mumbai',
+      },
+      // Not a Curxx city, so never read; but Agra is one of the places Doctar uses.
+      {
+        _id: H3,
+        slug: 'agra-care-hospital',
+        name: 'Agra Care Hospital',
+        type: 'hospital',
+        city: 'Agra',
+        address: '1 Fort Road, Agra',
       },
     ],
     doctors: [
@@ -96,6 +122,7 @@ function fixtures() {
         lastName: 'Nogender',
         gender: undefined,
         isAdminVerified: false,
+        specialization: 'General Physician In Mumbai',
       }),
       doctor({ _id: D.generic, slug: 'santosh-doctor', firstName: 'Santosh', lastName: 'Doctor' }),
       doctor({ _id: D.org, slug: 'apollo-clinic', firstName: 'Apollo', lastName: 'Clinic' }),
@@ -424,6 +451,121 @@ describe('Doctar directory', () => {
       ['Rainbow Children’s Hospital: Banjara Hills', 'Rainbow Children’s Hospital: Banjara Hills'],
     ];
     for (const [raw, clean] of cases) assert.equal(placeName(raw), clean, raw);
+  });
+
+  test('a trailing "In <place>" is cut from a speciality name only when it names a known place', () => {
+    const ctx = mappingContext(
+      [
+        { slug: 'kolkata', name: 'Kolkata', localities: [] },
+        { slug: 'delhi', name: 'Delhi', localities: [] },
+      ],
+      [],
+      { places: ['Agra', 'Pimpri-Chinchwad', 'Dehra Dun'] },
+    );
+    const cases: [string, string][] = [
+      ['Oral Surgeon In Kolkata', 'Oral Surgeon'],
+      ['Hip Replacement Surgeon In Agra', 'Hip Replacement Surgeon'],
+      ['cancer surgeon in pimpri-chinchwad', 'cancer surgeon'],
+      ['Brain Surgeon In Dehra Dun', 'Brain Surgeon'],
+      ['Dentist In New Delhi.', 'Dentist'],
+      ['Treatment In Children In Kolkata', 'Treatment In Children'],
+      ['Blood In Urine', 'Blood In Urine'],
+      [
+        'Assessment Of Behavioural Problems In Elderly',
+        'Assessment Of Behavioural Problems In Elderly',
+      ],
+      ['In Vitro Fertilization', 'In Vitro Fertilization'],
+      ['Oral Surgeon In Atlantis', 'Oral Surgeon In Atlantis'],
+    ];
+    for (const [raw, clean] of cases) assert.equal(withoutPlace(raw, ctx), clean, raw);
+  });
+
+  test('speciality names lose scraped place tails, and the duplicates merge, on every page', async () => {
+    const clean = [
+      'Oral Surgeon',
+      'Hip Replacement Surgeon',
+      'Ivf Specialist',
+      'Blood In Urine',
+      'Dentist',
+    ];
+    const list = await get('/facilities?city=mumbai&type=hospital&limit=50');
+    const card = list.body.items.find(
+      (f: { slug: string }) => f.slug === 'testcare-hospital-andheri',
+    );
+    assert.deepEqual(card.departments, clean);
+    assert.ok(card.specialties.includes('dentist'), '"Dentist In Kolkata" counts as Dentist');
+    // One filter entry and count for "Oral Surgeon", not one per city.
+    const facet = list.body.facets.departments as { value: string; count: number }[];
+    assert.deepEqual(
+      facet.filter((d) => d.value.toLowerCase().startsWith('oral surgeon')),
+      [{ value: 'Oral Surgeon', count: 1 }],
+    );
+    assert.ok(!facet.some((d) => /\bin (mumbai|agra|kolkata|atlantis)$/i.test(d.value)));
+    const filtered = await get('/facilities?city=mumbai&type=hospital&department=Oral%20Surgeon');
+    assert.deepEqual(
+      filtered.body.items.map((f: { slug: string }) => f.slug),
+      ['testcare-hospital-andheri'],
+    );
+    const page = await get('/facilities/testcare-hospital-andheri');
+    assert.deepEqual(
+      page.body.facility.departments,
+      clean,
+      'the hospital page shows the same list',
+    );
+    // Doctors: Doctar's "General Physician In Mumbai" is Curxx's General Physician.
+    assert.equal(
+      (await get('/doctors/dr-ravi-nogender')).body.doctor.specialty,
+      'general-physician',
+    );
+    // SEO: the surgery page's hospital table (ranked first here, so it's in the top 10).
+    await call('PUT', `/admin/doctar/overlays/facility/${String(H1)}`, { rank: 1 });
+    const seo = await get('/seo/surgeries?city=mumbai');
+    assert.equal(seo.body.hospitals[0].slug, 'testcare-hospital-andheri');
+    assert.deepEqual(seo.body.hospitals[0].departments, clean.slice(0, 3));
+    await call('DELETE', `/admin/doctar/overlays/facility/${String(H1)}`);
+  });
+
+  test('hospital photos from Doctar show only with DOCTAR_SHOW_FACILITY_PHOTOS; one set in the admin always shows', async (t) => {
+    t.after(() => (env.DOCTAR_SHOW_FACILITY_PHOTOS = false));
+    const photos = async () => {
+      const list = await get('/facilities?city=mumbai&type=hospital&limit=50');
+      const page = await get('/facilities/testcare-hospital-andheri');
+      const profile = await get('/doctors/dr-asha-testdoctor');
+      return {
+        card: list.body.items.find((f: { slug: string }) => f.slug === 'testcare-hospital-andheri')
+          .photoUrl,
+        page: page.body.facility.photoUrl,
+        gallery: page.body.facility.gallery,
+        doctorPage: profile.body.facility.photoUrl,
+      };
+    };
+    // Off by default: no Doctar photo anywhere, so the website shows its placeholder.
+    assert.deepEqual(await photos(), { card: '', page: '', gallery: [], doctorPage: '' });
+
+    const own = 'https://curxx.example/testcare-front.jpg';
+    const set = await call('PUT', `/admin/doctar/overlays/facility/${String(H1)}`, {
+      photoUrl: own,
+    });
+    assert.equal(set.status, 200);
+    assert.deepEqual(await photos(), { card: own, page: own, gallery: [], doctorPage: own });
+    await call('DELETE', `/admin/doctar/overlays/facility/${String(H1)}`);
+
+    env.DOCTAR_SHOW_FACILITY_PHOTOS = true;
+    await useDoctar(memoryDoctarSource(fixtures()));
+    assert.deepEqual(await photos(), {
+      card: COVER,
+      page: COVER,
+      gallery: [GALLERY],
+      doctorPage: COVER,
+    });
+
+    // Turned off again, a copy saved while they were on doesn't bring them back.
+    env.DOCTAR_SHOW_FACILITY_PHOTOS = false;
+    useDoctarSource(memoryDoctarSource(fixtures(), { failing: () => true }));
+    clearDetailCache();
+    assert.equal(await loadSavedIndex(), true);
+    assert.deepEqual(await photos(), { card: '', page: '', gallery: [], doctorPage: '' });
+    await useDoctar(memoryDoctarSource(fixtures()));
   });
 
   test('nothing writes to Doctar: the connection only reads', () => {
