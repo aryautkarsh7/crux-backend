@@ -114,6 +114,12 @@ const FACILITY_CATEGORY: Record<string, string> = {
 const ORGANISATION = /\b(pvt|private|ltd|limited|llp|inc|clinics?|hospitals?|centres?|centers?|care|dental|dentistry|physio|physiotherapy|diagnostics?|healthcare|health|foundation|trust|institute|polyclinic|nursing|labs?|laboratory|pharmacy|medical|medicare|speciality|specialty|multispeciality|wellness|enterprises?|solutions|services|associates|orthodontics|homoeopathy|homeopathy)\b|[&@\d]/i;
 
 /**
+ * A role in place of a name ("Swati Specialist", "Anil Dermatologist"): a placeholder, not a person's name.
+ * Words from Curxx's specialty names are added at run time. "Doctor" is left out: it's a real (Parsi) surname.
+ */
+const ROLE_WORDS = new Set(['specialist', 'specialists', 'consultant', 'physician', 'surgeon', 'dentist', 'practitioner', 'therapist', 'sexologist']);
+
+/**
  * Doctar removed Practo-scraped records from its production database, but staging still has them. A record
  * is treated as Practo-origin when any field mentions Practo (hospitalSourceId / sourceUrl / sourceId are
  * practo.com links; a few names and bios mention it too). Doctors whose clinic would come only from the
@@ -121,10 +127,12 @@ const ORGANISATION = /\b(pvt|private|ltd|limited|llp|inc|clinics?|hospitals?|cen
  */
 const PRACTO = /practo/i;
 /**
- * Most of staging is scraped (24k of 31k doctors): skip records whose source id or URL names Practo in the
- * query itself, so they aren't downloaded. Anything this excludes the full field scan below would skip too.
+ * Most of staging is scraped: 24k of 31k doctors have a Practo source id or URL, and most of the rest are
+ * Google Maps listings with no gender. Both are skipped in the query itself so they aren't downloaded;
+ * the checks below would skip every one of them anyway.
  */
 const NOT_PRACTO_SOURCE = { $nor: [{ sourceId: PRACTO }, { hospitalSourceId: PRACTO }, { sourceUrl: PRACTO }] };
+const HAS_GENDER = { gender: { $in: ['male', 'female'] } };
 /** Field paths ("hospitals[].name") whose text mentions Practo. */
 function practoFields(value: unknown, path = '', out = new Set<string>()): Set<string> {
   if (typeof value === 'string') {
@@ -227,9 +235,10 @@ async function main() {
   const doctarUri = process.env.DOCTAR_DB_URL;
   if (!curxxUri || !doctarUri) throw new Error('MONGODB_URI and DOCTAR_DB_URL must be set in backend/.env');
 
-  // No automatic index or collection creation: a dry run must not write anything.
-  await mongoose.connect(curxxUri, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 15_000 });
-  const doctarConn = await mongoose.createConnection(doctarUri, { autoIndex: false, autoCreate: false, readPreference: 'secondaryPreferred', serverSelectionTimeoutMS: 15_000 }).asPromise();
+  // No automatic index or collection creation: a dry run must not write anything. A read that stalls on a
+  // dropped connection fails after two minutes instead of hanging.
+  await mongoose.connect(curxxUri, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 15_000, socketTimeoutMS: 120_000 });
+  const doctarConn = await mongoose.createConnection(doctarUri, { autoIndex: false, autoCreate: false, readPreference: 'secondaryPreferred', serverSelectionTimeoutMS: 15_000, socketTimeoutMS: 120_000 }).asPromise();
   try {
     const target = mongoose.connection.db!.databaseName;
     if (!DRY_RUN && CONFIRM_DB !== target) throw new Error(`Refusing to write: MONGODB_URI points at Curxx database "${target}". Re-run with --db ${target} to confirm.`);
@@ -299,6 +308,9 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   const clinicSource = new Tally();
   const facilityNotes = new Tally();
   const organisationNames: string[] = [];
+  const genericNames: string[] = [];
+  // "Dermatologist", "Gynecologist"…: any long word from a specialty name is a role, not a name.
+  const roleWords = new Set([...ROLE_WORDS, ...specialties.flatMap((sp) => sp.name.toLowerCase().split(/[^a-z]+/)).filter((w) => w.length >= 7)]);
   const practoMarkers = new Tally();
   let scanned = 0;
   let feeApprox = 0;
@@ -383,7 +395,7 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   // ---- Doctors ----
   const doctors: Planned[] = [];
   const usedFacilities = new Map<string, Planned>();
-  const cursor = doctar('doctors').find({ isAdminVerified: true, ...NOT_PRACTO_SOURCE }, { projection: DOCTOR_FIELDS, sort: { _id: 1 }, batchSize: 500 });
+  const cursor = doctar('doctors').find({ isAdminVerified: true, ...NOT_PRACTO_SOURCE, ...HAS_GENDER }, { projection: DOCTOR_FIELDS, sort: { _id: 1 }, batchSize: 500 });
   const chunkSize = Math.min(500, Number.isFinite(LIMIT) ? Math.max(50, LIMIT * 5) : 500);
   let chunk: DoctarDoctor[] = [];
   let done = false;
@@ -423,6 +435,11 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
       if (ORGANISATION.test(fullName)) {
         skip('organisation, not a person');
         if (organisationNames.length < 12) organisationNames.push(fullName);
+        continue;
+      }
+      if (fullName.toLowerCase().split(/[^a-z]+/).some((w) => roleWords.has(w))) {
+        skip('generic name (a role, e.g. "Specialist")');
+        if (genericNames.length < 12) genericNames.push(fullName);
         continue;
       }
       if (d.gender !== 'male' && d.gender !== 'female') { skip('gender missing or not male/female'); continue; }
@@ -590,17 +607,19 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   const verb = DRY_RUN ? 'would be ' : '';
   const out: string[] = [];
   out.push('', `Doctar → Curxx import${DRY_RUN ? '  (DRY RUN: nothing written)' : ''}${Number.isFinite(LIMIT) ? `  --limit ${LIMIT}` : ''}${ONLY ? `  --only ${ONLY}` : ''}`);
-  const [verified, notPracto] = await Promise.all([
+  const [verified, notPracto, withGender] = await Promise.all([
     doctar('doctors').countDocuments({ isAdminVerified: true }),
     doctar('doctors').countDocuments({ isAdminVerified: true, ...NOT_PRACTO_SOURCE }),
+    doctar('doctors').countDocuments({ isAdminVerified: true, ...NOT_PRACTO_SOURCE, ...HAS_GENDER }),
   ]);
-  out.push(`  Scanned ${scanned} admin-verified Doctar doctors (of ${verified}; ${verified - notPracto} more skipped in the query: Practo source id or URL).`);
+  out.push(`  Scanned ${scanned} of ${verified} admin-verified Doctar doctors. Skipped in the query: ${verified - notPracto} with a Practo source id or URL, ${notPracto - withGender} with no gender.`);
   out.push('', `  Facilities${writeFacilities ? '' : ' (not written: --only doctors)'}: ${count(validFacilities, 'insert')} ${verb}inserted, ${count(validFacilities, 'update')} ${verb}updated`);
   out.push(`    Linked Doctar hospitals not imported: ${skippedFacilities.total}`, ...skippedFacilities.lines(12));
   if (facilityNotes.total) out.push('    Type overrides:', ...facilityNotes.lines());
   out.push('', `  Doctors${writeDoctors ? '' : ' (not written: --only facilities)'}: ${count(validDoctors, 'insert')} ${verb}inserted, ${count(validDoctors, 'update')} ${verb}updated, ${skippedDoctors.total} skipped`);
   out.push(...skippedDoctors.lines());
   if (organisationNames.length) out.push(`    Organisation names skipped, e.g.: ${organisationNames.join(' · ')}`);
+  if (genericNames.length) out.push(`    Generic names skipped: ${genericNames.join(' · ')}`);
   if (practoMarkers.total) out.push('    Practo markers found (field · records):', ...practoMarkers.lines(15));
   out.push('    Clinic name taken from:', ...clinicSource.lines());
   const clinicPhone = new Set(validFacilities.filter((f) => f.doc.phone).map((f) => f.doc.slug));
@@ -619,7 +638,16 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   console.log(out.join('\n'));
 }
 
-main().catch((error: unknown) => {
+// A dropped connection can leave a read that never settles; Node then exits quietly with code 0. Say so.
+let finished = false;
+process.on('beforeExit', () => {
+  if (finished) return;
+  console.error('Stopped before finishing: a database connection dropped. Upserts are safe to repeat: run it again.');
+  process.exitCode = 1;
+});
+
+main().then(() => (finished = true)).catch((error: unknown) => {
+  finished = true;
   // Driver errors can echo a connection string; print only the message with credentials masked.
   console.error(String((error as Error)?.message ?? error).replace(/mongodb(\+srv)?:\/\/[^\s/]+/g, 'mongodb://***'));
   process.exit(1);
