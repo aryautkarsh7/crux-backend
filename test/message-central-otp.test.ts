@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { buildApp } from '../src/app.js';
 import { env } from '../src/config/env.js';
-import { connectDatabase } from '../src/db/connect.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
 import { resetTokenCache, isMessageCentralConfigured, getAuthToken, sendOtpMessageCentral, validateOtpMessageCentral } from '../src/lib/notify/message-central.js';
 
 type App = Awaited<ReturnType<typeof buildApp>>;
@@ -32,6 +32,8 @@ describe('Message Central VerifyNow client & OTP flow', () => {
   after(async () => {
     globalThis.fetch = originalFetch;
     await app.close();
+    // Also stops the mongod this file started, so the test process can exit.
+    await disconnectDatabase();
   });
 
   beforeEach(() => {
