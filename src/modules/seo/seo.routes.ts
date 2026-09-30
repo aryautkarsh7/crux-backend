@@ -4,6 +4,7 @@ import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { doctorStats } from './doctor-stats.js';
+import { sitemapData } from './sitemap.js';
 import { surgeryStats } from './surgery-stats.js';
 
 // Computed stats are cached for 10 minutes on the server; let the CDN keep them briefly too.
@@ -32,5 +33,11 @@ export async function seoRoutes(app: FastifyInstance) {
     const q = z.object({ city: z.string().trim().min(2).max(40) }).parse(request.query);
     reply.header('cache-control', SEO_CACHE);
     return surgeryStats(scopeCity(q.city));
+  });
+
+  /** The pages worth listing in the sitemap: none without doctors, no hidden sample data. */
+  app.get('/seo/sitemap', async (_request, reply) => {
+    reply.header('cache-control', SEO_CACHE);
+    return sitemapData();
   });
 }

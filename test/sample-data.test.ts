@@ -62,12 +62,12 @@ before(async () => {
   await cleanUp();
   // An imported clinic and doctor, shaped like scripts/import-doctar.ts writes them.
   await FacilityModel.create({
-    slug: CLINIC, name: 'Sampletest Clinic', shortName: 'Sampletest Clinic', type: 'clinic', category: 'Clinic', city: 'mumbai', area: 'Andheri',
+    slug: CLINIC, name: 'Sampletest Clinic', shortName: 'Sampletest Clinic', type: 'clinic', category: 'Clinic', city: 'mumbai', area: 'Andheri West',
     address: '1 Test Road, Andheri West, Mumbai', phone: '02212345678', rating: 0, reviewCount: 0, source: 'doctar', doctarId: 'sampletest-f1',
   });
   await DoctorModel.create({
     slug: IMPORTED, name: 'Dr. Sampletest Imported', qualification: 'MBBS, MD', title: 'General Physician', specialty: 'general-physician',
-    city: 'mumbai', area: 'Andheri', clinicName: 'Sampletest Clinic', facilitySlug: CLINIC, gender: 'female', experienceYears: 12, fee: 500, videoFee: 500,
+    city: 'mumbai', area: 'Andheri West', clinicName: 'Sampletest Clinic', facilitySlug: CLINIC, gender: 'female', experienceYears: 12, fee: 500, videoFee: 500,
     rating: 0, reviewCount: 0, recommendPercent: 0, verified: false, bookable: false, feeVerified: false, source: 'doctar', doctarId: 'sampletest-d1',
     schedule: { days: [1, 2, 3, 4, 5, 6], sessions: [{ start: '10:00', end: '13:00' }], step: 30, video: 'none' },
   });
@@ -147,6 +147,22 @@ describe('sample data hidden from the website', () => {
     assert.equal(stats.doctors, await all(() => DoctorModel.countDocuments(REAL)));
     assert.equal(stats.facilities, await all(() => FacilityModel.countDocuments(REAL)));
     assert.equal(stats.reviews, await all(() => ReviewModel.countDocuments({ sample: { $ne: true }, $or: [{ user: { $ne: null } }, { managed: true }] })));
+  });
+
+  test('the sitemap lists only pages with real doctors or facilities', async () => {
+    const res = await get('/seo/sitemap');
+    assert.equal(res.status, 200);
+    const { cities, india, doctors, facilities } = res.body;
+    assert.equal(doctors.length, await all(() => DoctorModel.countDocuments(REAL)));
+    assert.ok(doctors.some((d: { slug: string }) => d.slug === IMPORTED));
+    assert.equal(facilities.length, await all(() => FacilityModel.countDocuments(REAL)));
+    const mumbai = cities.find((c: { slug: string }) => c.slug === 'mumbai');
+    assert.deepEqual(mumbai.specialties, (await all(() => DoctorModel.distinct('specialty', { city: 'mumbai', ...REAL }))).sort());
+    assert.ok(mumbai.localities.doctors.includes('andheri-west') && mumbai.localities['general-physician'].includes('andheri-west'));
+    assert.ok(mumbai.conditions.includes('fever'), 'condition pages for specialties with doctors');
+    assert.ok(!mumbai.conditions.includes('acne') || mumbai.specialties.includes('dermatologist'));
+    for (const c of cities) assert.ok(c.doctors > 0 || c.hospitals + c.clinics > 0 || c.surgeries.length > 0, `${c.slug} has something to list`);
+    assert.ok(india.specialties.includes('general-physician'));
   });
 
   test('conditions pages say when nobody is listed yet', async () => {
