@@ -228,7 +228,9 @@ describe('sample data hidden from the website', () => {
     assert.equal(reviews.body.total, 1);
     assert.equal((await get(`/doctors/${IMPORTED}`)).body.doctor.reviewSummary.total, 1);
 
-    const seed = (await all(() => DoctorModel.findOne({ city: 'mumbai', sample: true, 'schedule.days.0': { $exists: true } }).lean()))!;
+    const seed = (await all(() => DoctorModel.findOne({ city: 'mumbai', sample: true, source: '' }).lean()))!;
+    seed.slotsThrough = null;
+    await all(() => DoctorModel.updateOne({ _id: seed._id }, { $set: { slotsThrough: null } }));
     await all(() => ensureSlots([seed] as never));
     const slot = (await all(() => SlotModel.findOne({ doctorSlug: seed.slug, status: 'open', startsAt: { $gt: new Date(Date.now() + 3_600_000) } }).lean()))!;
     const book = await call('POST', '/appointments', { token, body: { slotId: String(slot._id), patient: { name: 'Test Patient', phone: '9876501234' } } });

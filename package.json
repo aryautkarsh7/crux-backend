@@ -13,7 +13,10 @@
     "seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "import:doctar": "tsx scripts/import-doctar.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_DB=curxx_test JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "NODE_ENV=test MONGODB_PORT=27018 MONGODB_DATA_PATH=.data/mongo-test-27018 MONGODB_DB=curxx_test_27018 JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_PORT=27018 MONGODB_DATA_PATH=.data/mongo-test-27018 MONGODB_DB=curxx_test_27018 JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
@@ -26,11 +29,15 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.9.0",
     "dotenv": "^18.0.4",
+    "eslint": "^9.39.5",
     "mongodb-memory-server": "^10.1.2",
     "pino-pretty": "^13.0.0",
+    "prettier": "^3.9.9",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.71.0"
   }
 }

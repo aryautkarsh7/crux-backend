@@ -1,0 +1,7 @@
+dist/
+.data/
+# Existing source is the formatting baseline; keep tooling checks non-invasive.
+README.md
+scripts/
+src/
+test/
