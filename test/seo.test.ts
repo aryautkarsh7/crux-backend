@@ -4,9 +4,8 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import mongoose from 'mongoose';
 import { buildApp } from '../src/app.js';
-import { connectDatabase } from '../src/db/connect.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
 import { SURGERIES } from '../src/db/data/surgeries.js';
 import { DoctorModel } from '../src/models/doctor.model.js';
 
@@ -26,7 +25,8 @@ before(async () => {
 
 after(async () => {
   await app.close();
-  await mongoose.disconnect();
+  // Also stops the mongod this file started, so the test process can exit.
+  await disconnectDatabase();
 });
 
 const clinicOf = (d: { instant?: boolean | null; schedule?: { video?: string | null } | null }) => !d.instant && d.schedule?.video !== 'all';

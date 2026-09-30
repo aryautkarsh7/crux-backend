@@ -70,7 +70,12 @@ export async function catalogueRoutes(app: FastifyInstance) {
       related: allConditions().filter((c) => c.slug !== slug && c.specialty === condition.specialty).map(conditionSummary),
       otherCities: allCities().filter((c) => c.slug !== city.slug).map((c) => ({ slug: c.slug, name: c.name })),
       faqs: [
-        { question: `Which doctor should I see for ${condition.name.toLowerCase()} in ${place}?`, answer: `A ${specialty?.name ?? 'doctor'} treats ${condition.name.toLowerCase()}. Curxx lists ${doctorCount} verified ${specialty?.plural ?? 'doctors'} in ${place} you can book for a clinic visit${specialty?.video !== false ? ' or an online consultation' : ''}.` },
+        {
+          question: `Which doctor should I see for ${condition.name.toLowerCase()} in ${place}?`,
+          answer: `A ${specialty?.name ?? 'doctor'} treats ${condition.name.toLowerCase()}. ${doctorCount
+            ? `Curxx lists ${doctorCount} ${doctorCount === 1 ? specialty?.name ?? 'doctor' : specialty?.plural ?? 'doctors'} in ${place}.`
+            : `No ${specialty?.plural ?? 'doctors'} in ${place} are listed on Curxx yet.`}`,
+        },
         { question: `What are the common symptoms of ${condition.name.toLowerCase()}?`, answer: `${condition.symptoms.join('; ')}.` },
         { question: `When should I see a doctor for ${condition.name.toLowerCase()}?`, answer: `See a doctor if you notice: ${condition.whenToSee.join('; ')}.` },
         { question: `How is ${condition.name.toLowerCase()} treated?`, answer: `${condition.treatments.join('; ')}. Your doctor will tailor treatment after examining you.` },

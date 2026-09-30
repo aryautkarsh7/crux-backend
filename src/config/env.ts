@@ -83,6 +83,11 @@ export const env = {
   ...parsed.data,
   ...adminLogin(),
   ...bookingRequests(),
+  /**
+   * The generated seed doctors, facilities, reviews and testimonials (see lib/sample-data.ts). Off by
+   * default: the website then only shows imported and admin-added records. Tests and demos turn it on.
+   */
+  SHOW_SAMPLE_DATA: ['1', 'true', 'yes'].includes(String(process.env.SHOW_SAMPLE_DATA ?? '').trim().toLowerCase()),
   isProduction: parsed.data.NODE_ENV === 'production',
   // The Angular admin panel runs on :4200 in development.
   corsOrigins: [...parsed.data.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean), ...(parsed.data.NODE_ENV === 'production' ? [] : ['http://localhost:4200'])],

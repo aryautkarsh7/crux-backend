@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType } from 'mongoose';
+import { hideSampleData } from '../lib/sample-data.js';
 
 const reviewSchema = new Schema(
   {
@@ -15,6 +16,8 @@ const reviewSchema = new Schema(
     visitedFor: { type: String, default: '' },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** Generated review: hidden from the website unless SHOW_SAMPLE_DATA is on (lib/sample-data.ts). */
+    sample: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
@@ -22,6 +25,8 @@ const reviewSchema = new Schema(
 reviewSchema.index({ doctorSlug: 1, createdAt: -1 });
 // One review per patient per doctor; seeded reviews have no user.
 reviewSchema.index({ doctorSlug: 1, user: 1 }, { unique: true, partialFilterExpression: { user: { $exists: true } } });
+// Real reviews: written by a patient, or added by the team in the admin panel.
+hideSampleData(reviewSchema, () => ({ $or: [{ user: { $ne: null } }, { managed: true }] }));
 
 export type Review = InferSchemaType<typeof reviewSchema>;
 export const ReviewModel = model('Review', reviewSchema);

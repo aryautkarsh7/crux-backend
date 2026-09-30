@@ -47,6 +47,15 @@ edited in the admin panel. `db/data/*.ts` holds their seed copies: `syncCatalogu
 cities, conditions and surgeries through `lib/catalogue-store.ts`, an in-memory copy reloaded every minute
 and immediately after an admin edit.
 
+## Sample data
+
+The seed doctors, facilities, reviews and testimonials are generated examples, flagged `sample: true`. Unless
+`SHOW_SAMPLE_DATA=true`, every public route leaves them out: only imported (`source`) and admin-added
+(`managed`) records show, and the sync never writes, restores or deletes sample records. The rule is a
+Mongoose plugin on the models (`lib/sample-data.ts`), so new routes get it for free; the admin panel, the
+sync and `import:doctar` see everything through `withSampleData`. Seeded marketing claims (site settings of
+kind `claim`) also stay hidden until someone saves them in the admin. Tests run with sample data on.
+
 ## Sign-in
 
 Phone → 6-digit code → JWT. Codes are generated, hashed and expire in 5 minutes. Until an SMS

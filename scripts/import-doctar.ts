@@ -19,6 +19,7 @@ import 'dotenv/config';
 import mongoose, { type Types } from 'mongoose';
 import { describeSchedule, type Schedule, type Session } from '../src/db/data/doctor-network.js';
 import { FACILITY_TYPES } from '../src/db/data/facility-network.js';
+import { withSampleData } from '../src/lib/sample-data.js';
 import { CityModel } from '../src/models/catalogue.model.js';
 import { DoctorModel } from '../src/models/doctor.model.js';
 import { FacilityModel } from '../src/models/facility.model.js';
@@ -233,7 +234,8 @@ async function main() {
       const c = doctarConn.db!.collection(name);
       return { find: c.find.bind(c), aggregate: c.aggregate.bind(c), countDocuments: c.countDocuments.bind(c) };
     };
-    await run(doctar);
+    // Sees hidden sample records too, so new slugs never collide with theirs.
+    await withSampleData(() => run(doctar));
   } finally {
     await Promise.all([mongoose.disconnect(), doctarConn.close()]);
   }
@@ -500,7 +502,9 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
         freeVideo: false,
         instant: false,
         slotsThrough: null,
-        phone: phoneOf(d.phone),
+        // The doctor's own number is their Doctar sign-in phone, often a personal mobile: it isn't published.
+        // Call buttons use the clinic's number instead.
+        phone: '',
         bookable: false,
         // Unranked like seed records (no stored rankScore); the schema default 0 would put imports first.
         rankScore: null,
@@ -590,6 +594,9 @@ async function run(doctar: (name: string) => Pick<mongoose.mongo.Collection, 'fi
   if (organisationNames.length) out.push(`    Organisation names skipped, e.g.: ${organisationNames.join(' · ')}`);
   if (practoMarkers.total) out.push('    Practo markers found (field · records):', ...practoMarkers.lines(15));
   out.push('    Clinic name taken from:', ...clinicSource.lines());
+  const clinicPhone = new Set(validFacilities.filter((f) => f.doc.phone).map((f) => f.doc.slug));
+  const callable = validDoctors.filter((d) => clinicPhone.has(d.doc.facilitySlug)).length;
+  out.push(`    Call button: ${callable} with the clinic's number, ${validDoctors.length - callable} without a number (doctors' own numbers aren't published)`);
   out.push(`    Fees: ${validDoctors.length - feeApprox} confirmed, ${feeApprox} shown as "Approx." (feeSource "system" or missing, or no own fee; ${feeSourceMissing} had no feeSource)`);
   if (unmatchedSpecialties.total) out.push('', '  Unmatched specialties (skipped):', ...unmatchedSpecialties.lines(30));
   if (unmatchedCities.total) out.push('', '  Unmatched cities (skipped):', ...unmatchedCities.lines(30));

@@ -5,10 +5,9 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import mongoose from 'mongoose';
 import { buildApp } from '../src/app.js';
 import { syncCatalogue } from '../src/db/catalogue.js';
-import { connectDatabase } from '../src/db/connect.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
 import { HOME_FAQS } from '../src/db/data/site-content.js';
 import { SURGERIES } from '../src/db/data/surgeries.js';
 
@@ -32,7 +31,8 @@ before(async () => {
 
 after(async () => {
   await app.close();
-  await mongoose.disconnect();
+  // Also stops the mongod this file started, so the test process can exit.
+  await disconnectDatabase();
 });
 
 describe('public site data', () => {
