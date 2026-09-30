@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { FACILITY_TYPES } from '../../db/data/facility-network.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import { cities, conditions, surgeries, surgeryCategories } from '../../lib/catalogue-store.js';
+import { env } from '../../config/env.js';
 import { CATALOGUE_CACHE } from '../../lib/http.js';
 import { sampleHidden } from '../../lib/sample-data.js';
 import { DoctorModel } from '../../models/doctor.model.js';
@@ -18,10 +19,19 @@ let statsCache: { at: number; value: Awaited<ReturnType<typeof computeStats>> } 
 
 /** Every number the website shows about itself, counted from the database. */
 async function computeStats() {
-  const [doctors, verifiedDoctors, instantDoctors, facilities, hospitals, accreditedFacilities, emergencyFacilities, labs, labTests, specialties, reviews] = await Promise.all([
+  const video = { 'schedule.video': { $ne: 'none' } };
+  // Bookable online: Curxx's own doctors, plus imported ones with weekly hours once IMPORTED_BOOKABLE is on (see lib/booking-mode.ts).
+  const bookable = {
+    bookable: { $ne: false },
+    $or: [{ source: { $in: [null, ''] } }, ...(env.IMPORTED_BOOKABLE ? [{ source: { $nin: [null, ''] }, 'schedule.days.0': { $exists: true } }] : [])],
+  };
+  const [doctors, verifiedDoctors, instantDoctors, videoDoctors, freeVideoDoctors, bookableDoctors, facilities, hospitals, accreditedFacilities, emergencyFacilities, labs, labTests, specialties, reviews] = await Promise.all([
     DoctorModel.countDocuments(),
     DoctorModel.countDocuments({ verified: true }),
     DoctorModel.countDocuments({ instant: true }),
+    DoctorModel.countDocuments(video),
+    DoctorModel.countDocuments({ ...video, freeVideo: true }),
+    DoctorModel.countDocuments(bookable),
     FacilityModel.countDocuments(),
     FacilityModel.countDocuments({ type: 'hospital' }),
     FacilityModel.countDocuments({ nabh: true }),
@@ -35,6 +45,10 @@ async function computeStats() {
     doctors,
     verifiedDoctors,
     instantDoctors,
+    /** Doctors who consult by video / offer a free first video consult / can be booked online: claims about these only show when they're above 0. */
+    videoDoctors,
+    freeVideoDoctors,
+    bookableDoctors,
     facilities,
     hospitals,
     clinics: facilities - hospitals,

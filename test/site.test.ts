@@ -54,6 +54,10 @@ describe('public site data', () => {
     assert.ok(stats.accreditedFacilities > 0 && stats.accreditedFacilities <= stats.facilities);
     assert.ok(stats.averageRating >= 1 && stats.averageRating <= 5);
     assert.ok(stats.labTests > 200);
+    // Counts behind the homepage's video and booking claims (shown only when above 0).
+    assert.ok(stats.videoDoctors > 0 && stats.videoDoctors <= stats.doctors);
+    assert.ok(stats.freeVideoDoctors > 0 && stats.freeVideoDoctors <= stats.videoDoctors);
+    assert.ok(stats.bookableDoctors > 0 && stats.bookableDoctors <= stats.doctors);
   });
 
   test('page content comes back word for word, several pages at once', async () => {

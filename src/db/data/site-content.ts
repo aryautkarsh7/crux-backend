@@ -128,7 +128,7 @@ export const PLUS_PLANS = [
 ];
 
 const PLUS_BENEFIT_ROWS: [string, string, string][] = [
-  ['video_chat', 'Unlimited online consultations', 'Video, audio or chat with verified doctors any time — no per-consult fee for general physicians.'],
+  ['video_chat', 'Unlimited online consultations', 'Video, audio or chat with doctors any time — no per-consult fee for general physicians.'],
   ['event_available', 'Priority clinic booking', 'Earliest in-clinic slots are held for Plus members at partner clinics and hospitals.'],
   ['science', 'Discounted lab tests', 'Lower prices on {labTests} tests and scans, with free home sample collection on Family Max.'],
   ['medication', 'Savings on medicines', 'Extra discount on every pharmacy order, delivered from verified partner pharmacies.'],
@@ -155,7 +155,7 @@ export const LEGAL_PAGES = {
 ] as [string, string][]).map(([heading, body]) => ({ heading, body })) },
 
   'terms': { title: 'Terms of Service', intro: 'Last updated 1 September 2026. This is placeholder text for the Curxx prototype.', sections: ([
-  ['Using Curxx', 'Curxx connects patients with independently practising, verified doctors, pharmacies and diagnostic labs. Curxx does not itself provide medical advice.'],
+  ['Using Curxx', 'Curxx connects patients with independently practising doctors, pharmacies and diagnostic labs. Curxx does not itself provide medical advice.'],
   ['Not for emergencies', 'Do not use Curxx for medical emergencies. Call 108 or go to the nearest emergency department immediately.'],
   ['Bookings, payments and refunds', 'Appointments can be cancelled free of charge up to 2 hours before the scheduled time, with a full refund to the original payment method.'],
   ['Prescriptions and medicines', 'Prescription-only medicines are dispensed only against a valid prescription verified by a registered pharmacist.'],
@@ -174,19 +174,19 @@ export const LEGAL_PAGES = {
 /** The eight "Complete Care Ecosystem" cards. `{city}` in a link becomes the visitor's city. */
 export const HOME_SERVICES = [
   { eyebrow: 'Instant Consult', title: 'Instant Video Consult', body: 'Connect in 60 seconds with certified Indian GPs and senior clinical specialists on secure video.', icon: 'video_chat', cta: 'Consult in 60s', href: '/consult/video' },
-  { eyebrow: 'In-Person Care', title: 'Book Clinic Visit', body: 'Zero wait-time appointments at {accreditedFacilities} accredited neighborhood hospitals and polyclinics.', icon: 'local_hospital', cta: 'Find Clinics', href: '/{city}/clinics' },
+  { eyebrow: 'In-Person Care', title: 'Book Clinic Visit', body: 'See doctors at hospitals and clinics near you, with fees, timings and directions in one place.', icon: 'local_hospital', cta: 'Find Clinics', href: '/{city}/clinics' },
   { eyebrow: 'Doorstep Pharmacy', title: 'Prescribed Medicines', body: '100% authentic medicines dispensed by verified pharmacies and delivered within 2 hours.', icon: 'medication', cta: 'Order Medicines', href: '/medicines', anchor: 'medicines' },
   { eyebrow: 'Diagnostic Labs', title: 'Home Lab Tests', body: 'Certified phlebotomist sample collection from your doorstep with digital reports in 6 hours.', icon: 'science', cta: 'Book Lab Test', href: '/lab-tests' },
-  { eyebrow: 'Free First Consult', title: 'Free Video Consultation', body: 'Talk to verified doctors who offer a free first video consult — no charge for the call, prescription included.', icon: 'redeem', cta: 'See free consults', href: '/consult/video/general-physician/all?when=free' },
+  { eyebrow: 'Free First Consult', title: 'Free Video Consultation', body: 'Talk to doctors who offer a free first video consult — no charge for the call, prescription included.', icon: 'redeem', cta: 'See free consults', href: '/consult/video/general-physician/all?when=free' },
   { eyebrow: 'Planned Surgery', title: 'Surgery Care', body: 'Laser piles, cataract, hernia, knee replacement and more — cost estimates, top hospitals and a free surgeon consultation.', icon: 'healing', cta: 'Explore surgeries', href: '/{city}/surgeries' },
   { eyebrow: 'Symptom Checker', title: 'Check Your Symptoms', body: 'Answer a few quick questions and get the right specialist, how soon to see them, and doctors available now.', icon: 'symptoms', cta: 'Start symptom check', href: '/triage' },
   { eyebrow: 'Health Records', title: 'Digital Health Locker', body: 'Prescriptions, lab reports and scans in one place, linked to your ABHA ID and shared only with your consent.', icon: 'folder_shared', cta: 'Open health locker', href: '/records' },
 ];
 
 export const HOME_HOW_IT_WORKS = [
-  { title: 'Search Verified Doctor', body: 'Filter by specialty, symptom, clinical experience, languages spoken, and clinic location in your neighborhood.', footnote: '100% Medical Council of India verified' },
-  { title: 'Consult Online or In-Person', body: 'Start an instant HD video consultation in 60s or book an appointment at an accredited polyclinic near you.', footnote: 'Zero waiting room time guaranteed' },
-  { title: 'Get Digital Rx & Follow-up', body: 'Receive a digitally signed e-prescription valid at any chemist, plus 7-day free chat follow-up with your doctor.', footnote: 'Auto-synced to your ABHA health record' },
+  { title: 'Search for a Doctor', body: 'Filter by specialty, symptom, clinical experience, languages spoken, and clinic location in your neighborhood.', footnote: 'Qualifications and clinic details on every profile' },
+  { title: 'Consult Online or In-Person', body: 'Call the clinic straight from the doctor’s profile, or book online where the doctor offers it.', footnote: 'Fees and timings shown upfront' },
+  { title: 'Keep Your Records Together', body: 'Save prescriptions and lab reports in your Curxx health locker, linked to your ABHA ID.', footnote: 'Shared only with your consent' },
 ];
 
 export const PROVIDER_FAQS: Faq[] = [
