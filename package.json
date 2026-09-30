@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test": "NODE_ENV=test MONGODB_PORT=27018 MONGODB_DATA_PATH=.data/mongo-test-27018 MONGODB_DB=curxx_test_27018 JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_PORT=27018 MONGODB_DATA_PATH=.data/mongo-test-27018 MONGODB_DB=curxx_test_27018 JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
+    "test": "NODE_ENV=test MONGODB_URI= MONGODB_PORT=${MONGODB_PORT:-27018} MONGODB_DATA_PATH=${MONGODB_DATA_PATH:-.data/mongo-test-${MONGODB_PORT:-27018}} MONGODB_DB=${MONGODB_DB:-curxx_test_${MONGODB_PORT:-27018}} JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true tsx src/db/seed.ts && NODE_ENV=test MONGODB_URI= MONGODB_PORT=${MONGODB_PORT:-27018} MONGODB_DATA_PATH=${MONGODB_DATA_PATH:-.data/mongo-test-${MONGODB_PORT:-27018}} MONGODB_DB=${MONGODB_DB:-curxx_test_${MONGODB_PORT:-27018}} JWT_SECRET=test-secret-at-least-16 SHOW_SAMPLE_DATA=true ADMIN_EMAIL=admin@curxx.test ADMIN_PASSWORD=test-admin-password tsx --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.0.1",
