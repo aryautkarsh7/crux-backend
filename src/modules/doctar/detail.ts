@@ -138,11 +138,15 @@ export async function facilityDetail(doc: Doc): Promise<Doc> {
     ...fresh,
     _id: doc._id,
     slug: doc.slug,
+    // As in the listing and its filters: departments cleaned with every place name the last build knew.
+    departments: doc.departments,
     specialties: doc.specialties,
     rank: doc.rank,
     rankScore: doc.rankScore,
     featured: doc.featured,
     phone: doc.phone || fresh.phone,
+    // A photo set in the admin panel wins; Doctar's own only when DOCTAR_SHOW_FACILITY_PHOTOS is on.
+    photoUrl: doc.photoUrl || fresh.photoUrl,
   };
 }
 

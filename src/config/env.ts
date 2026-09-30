@@ -137,6 +137,11 @@ function doctarSettings() {
         .toLowerCase() !== 'false',
     /** Only Doctar's admin-verified doctors (default: all doctors in Curxx's cities and specialties). */
     DOCTAR_VERIFIED_ONLY: flag(process.env.DOCTAR_VERIFIED_ONLY),
+    /**
+     * Show hospitals' and clinics' own photos from Doctar. Off by default: many are scraped and unrelated
+     * (adverts, close-ups), so the website shows its placeholder. A photo set in the admin panel always shows.
+     */
+    DOCTAR_SHOW_FACILITY_PHOTOS: flag(process.env.DOCTAR_SHOW_FACILITY_PHOTOS),
     /** Full rebuild of the listing index; Doctar has no updatedAt index yet, so no incremental refresh. */
     DOCTAR_REFRESH_MINUTES: int(process.env.DOCTAR_REFRESH_MINUTES, 60, 5, 24 * 60),
     /** Records per read while building the index (memory vs number of round trips). */

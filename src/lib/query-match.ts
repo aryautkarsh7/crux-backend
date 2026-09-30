@@ -43,7 +43,11 @@ const plain = (v: unknown) =>
       : v;
 
 function equals(value: unknown, target: unknown): boolean {
-  if (target instanceof RegExp) return typeof value === 'string' && target.test(value);
+  // A regex matches an array when any string in it matches ({ departments: /^Oral/i }).
+  if (target instanceof RegExp)
+    return Array.isArray(value)
+      ? value.some((v) => typeof v === 'string' && target.test(v))
+      : typeof value === 'string' && target.test(value);
   if (Array.isArray(value))
     return value.some((v) => equals(v, target)) || JSON.stringify(value) === JSON.stringify(target);
   if (target === null) return value === null || value === undefined;

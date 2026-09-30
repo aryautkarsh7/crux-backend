@@ -78,7 +78,9 @@ copied into Curxx (`src/modules/doctar`):
 - `directory.ts` builds a lean in-memory listing index (small projections, no bios) by paging through Doctar,
   rebuilds it every `DOCTAR_REFRESH_MINUTES` (default 60) and saves the last good copy gzipped in
   `directory_cache`, so a restart serves listings at once even if Doctar is down. Peak memory is logged.
-- `mapping.ts` decides what's listed and how Doctar fields map to Curxx's doctor/facility shapes.
+- `mapping.ts` decides what's listed and how Doctar fields map to Curxx's doctor/facility shapes. Speciality
+  and department names lose scraped place tails ("Oral Surgeon In Kolkata" → "Oral Surgeon", for any city
+  Doctar or Curxx knows) and duplicates merge.
 - `store.ts` (`Doctors`, `Facilities`) is what public routes read: Curxx's own records (MongoDB) plus the
   directory, with the same MongoDB filters and sorts (`lib/query-match.ts`).
 - `detail.ts` reads a profile's page-only fields from Doctar, cached (`DOCTAR_DETAIL_TTL_SECONDS`).
@@ -87,8 +89,9 @@ copied into Curxx (`src/modules/doctar`):
 - While no copy is loaded, listings say "temporarily unavailable" and missing profiles answer 503, not 404.
 
 Settings: `DOCTAR_VERIFIED_ONLY`, `DOCTAR_REFRESH_MINUTES`, `DOCTAR_PAGE_SIZE`, `DOCTAR_MAX_DOCTORS`,
-`DOCTAR_TIMEOUT_MS`, `DOCTAR_DETAIL_TTL_SECONDS`, `DOCTAR_POOL_SIZE`, `DOCTAR_ENABLED=false` (see
-`config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
+`DOCTAR_TIMEOUT_MS`, `DOCTAR_DETAIL_TTL_SECONDS`, `DOCTAR_POOL_SIZE`, `DOCTAR_ENABLED=false`,
+`DOCTAR_SHOW_FACILITY_PHOTOS` (default off: hospitals' own Doctar photos are hidden and the website shows
+its placeholder; a photo set in the admin always shows) (see `config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
 removes the copies left by the old import.
 
 ## Sign-in
