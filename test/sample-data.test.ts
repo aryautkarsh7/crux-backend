@@ -253,6 +253,16 @@ describe('sample data hidden from the website', () => {
     );
   });
 
+  test('sample labs are hidden: no seed lab in the list or at its own URL', async () => {
+    const labs = await get('/labs?city=bangalore');
+    assert.equal(labs.status, 200);
+    assert.ok(
+      !labs.body.items.some((l: { slug: string }) => l.slug === 'curxx-diagnostics-koramangala'),
+    );
+    assert.equal(labs.body.total, 0, 'only labs added in the admin panel are real');
+    assert.equal((await get('/labs/curxx-diagnostics-koramangala')).status, 404);
+  });
+
   test('the sitemap lists only pages with real doctors or facilities', async () => {
     const res = await get('/seo/sitemap');
     assert.equal(res.status, 200);

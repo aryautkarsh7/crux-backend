@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType } from 'mongoose';
+import { hideSampleData } from '../lib/sample-data.js';
 
 /** A partner diagnostic lab: processes samples, runs home collection in its radius, and may take walk-ins. */
 const labSchema = new Schema(
@@ -41,11 +42,15 @@ const labSchema = new Schema(
     photoUrl: { type: String, default: '' },
     /** Created or edited in the admin panel: the catalogue sync never overwrites or deletes it. */
     managed: { type: Boolean, default: false, index: true },
+    /** Generated seed lab: hidden from the website unless SHOW_SAMPLE_DATA is on (lib/sample-data.ts). */
+    sample: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, versionKey: false },
 );
 
 labSchema.index({ city: 1, rating: -1 });
+// Every seed lab is sample data: only labs added in the admin panel are real.
+hideSampleData(labSchema, () => ({ managed: true }));
 
 export type Lab = InferSchemaType<typeof labSchema>;
 export const LabModel = model('Lab', labSchema);

@@ -91,7 +91,7 @@ const stale = (slugs: string[]) => ({
 });
 
 /**
- * Seed doctors, facilities, reviews and testimonials are sample data (lib/sample-data.ts). With
+ * Seed doctors, facilities, labs, reviews and testimonials are sample data (lib/sample-data.ts). With
  * SHOW_SAMPLE_DATA off the sync never writes, restores or deletes them, so a deploy can't bring them back;
  * it only flags the stored ones, so editing one in the admin panel doesn't publish it.
  */
@@ -404,9 +404,13 @@ async function sync(log: Log) {
       buildCityLabs(c).map((l) => ({ ...l, city: c.slug, tests: menu[l.profile] })),
     ),
   ];
-  await upsertAll(LabModel, labs);
-  await LabModel.deleteMany(stale(labs.map((l) => l.slug)));
-  step(`labs ${labs.length}`);
+  const sampleLabs = labs.map((l) => ({ ...l, sample: true }));
+  if (env.SHOW_SAMPLE_DATA) {
+    await upsertAll(LabModel, sampleLabs);
+    await LabModel.deleteMany(stale(labs.map((l) => l.slug)));
+  }
+  await flagSample(LabModel, seedSlugs(labs));
+  step(`labs ${labs.length}${env.SHOW_SAMPLE_DATA ? '' : ' (sample data: flagged, not written)'}`);
 
   // ---- Doctors ----
   const facilityBySlug = new Map(facilities.map((f) => [f.slug, f]));
