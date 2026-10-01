@@ -854,3 +854,44 @@ export function practicesOf(
   }
   return out;
 }
+
+/**
+ * Doctar sometimes lists one person several times (e.g. once per source). Records with the same name,
+ * specialty, city and years of experience count as one doctor; the best one is listed (Doctar-verified,
+ * linked to a hospital, with hours, with a photo, then the shortest slug) and the others map to it.
+ * Different experience counts as different people: nothing is merged on the name alone.
+ */
+export function duplicatesOf(doctors: DoctorDoc[]): Map<string, string> {
+  const key = (d: (typeof doctors)[number]) =>
+    `${String(d.name)
+      .toLowerCase()
+      .replace(/[^a-z]/g, '')}|${d.specialty}|${d.city}|${Number(d.experienceYears)}`;
+  const score = (d: (typeof doctors)[number]) =>
+    [
+      d.doctarVerified === true,
+      Boolean(d.facilitySlug),
+      Boolean(d.consultHours),
+      Boolean(d.photoUrl),
+    ]
+      .map(Number)
+      .join('');
+  const best = new Map<string, (typeof doctors)[number]>();
+  for (const d of doctors) {
+    const k = key(d);
+    const current = best.get(k);
+    if (
+      !current ||
+      score(d) > score(current) ||
+      (score(d) === score(current) &&
+        (d.slug.length < current.slug.length ||
+          (d.slug.length === current.slug.length && d.slug < current.slug)))
+    )
+      best.set(k, d);
+  }
+  const out = new Map<string, string>();
+  for (const d of doctors) {
+    const primary = best.get(key(d))!;
+    if (primary.slug !== d.slug) out.set(d.slug, primary.slug);
+  }
+  return out;
+}

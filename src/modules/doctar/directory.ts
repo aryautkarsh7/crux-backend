@@ -24,6 +24,7 @@ import {
   mapHospital,
   mappingContext,
   matchingPlaces,
+  duplicatesOf,
   type DoctarDoctor,
   type DoctarHospital,
   type DoctarSchedule,
@@ -70,6 +71,8 @@ type Live = {
   doctorsByFacility: Map<string, DoctorDoc[]>;
   facilitiesByCity: Map<string, FacilityDoc[]>;
   facilityByDoctarId: Map<string, FacilityDoc>;
+  /** Second records of the same doctor → the slug that's listed (mapping.ts, duplicatesOf). */
+  duplicateOf: Map<string, string>;
 };
 
 const EMPTY_LIVE: Live = {
@@ -81,6 +84,7 @@ const EMPTY_LIVE: Live = {
   doctorsByFacility: new Map(),
   facilitiesByCity: new Map(),
   facilityByDoctarId: new Map(),
+  duplicateOf: new Map(),
 };
 
 let source: DoctarSource | null = null;
@@ -382,6 +386,7 @@ async function publish() {
     doctorsByFacility: group(doctors, (d) => d.facilitySlug),
     facilitiesByCity: group(facilities, (f) => f.city),
     facilityByDoctarId: new Map(facilities.map((f) => [String(f.doctarId), f])),
+    duplicateOf: duplicatesOf(doctors),
   };
 }
 
@@ -409,7 +414,15 @@ export function directoryMatches<T extends DoctorDoc | FacilityDoc>(
   } else if (kind === 'doctors' && typeof filter.facilitySlug === 'string')
     candidates = live.doctorsByFacility.get(filter.facilitySlug) ?? [];
   else if (typeof filter.city === 'string') candidates = byCity.get(filter.city) ?? [];
-  return candidates.filter((d) => matches(d, filter)) as T[];
+  // Lists show each doctor once; a second record still answers at its own URL (asked for by slug), and a
+  // hospital's page lists whoever consults there.
+  const byIdentity =
+    typeof filter.slug === 'string' ||
+    Array.isArray(slugIn) ||
+    typeof filter.facilitySlug === 'string';
+  const dupes =
+    kind === 'doctors' && !byIdentity && live.duplicateOf.size ? live.duplicateOf : null;
+  return candidates.filter((d) => !dupes?.has(d.slug) && matches(d, filter)) as T[];
 }
 
 // ---------------------------------------------------------------- Lifecycle

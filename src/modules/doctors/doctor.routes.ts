@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { scheduleGroups } from '../../db/data/doctor-network.js';
 import type { Practice } from '../doctar/mapping.js';
+import { doctorDto } from '../../lib/doctor-dto.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import {
   cities as allCities,
@@ -16,7 +17,7 @@ import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { sortBy } from '../../lib/query-match.js';
 import { doctorDetail, facilityDetail } from '../doctar/detail.js';
-import { directoryUnavailable } from '../doctar/directory.js';
+import { directoryUnavailable, liveDirectory } from '../doctar/directory.js';
 import { Doctors, Facilities, notListed } from '../doctar/store.js';
 import { ReviewModel } from '../../models/review.model.js';
 import { SlotModel } from '../../models/slot.model.js';
@@ -91,20 +92,7 @@ export function availabilityWindow(availability?: 'now' | 'today' | 'tomorrow' |
 export const resolveSpecialtySlug = (slug?: string) =>
   slug ? (SPECIALTY_ALIASES[slug] ?? slug) : slug;
 
-const dto = ({
-  _id,
-  createdAt: _c,
-  updatedAt: _u,
-  schedule,
-  slotsThrough: _t,
-  ...d
-}: Record<string, any>) => ({
-  id: String(_id),
-  ...d,
-  offersVideo: schedule?.video !== 'none',
-  /** instant (book & pay) · request (send a request, the clinic confirms) · none (Call / Visit). */
-  booking: bookingModeOf({ source: d.source, bookable: d.bookable, schedule }),
-});
+const dto = doctorDto;
 
 export async function doctorRoutes(app: FastifyInstance) {
   // ---- Cities ----
@@ -472,7 +460,13 @@ export async function doctorRoutes(app: FastifyInstance) {
       ]),
       SpecialtyModel.findOne({ slug: doctor.specialty }).lean(),
       Doctors.find(
-        { specialty: doctor.specialty, city: doctor.city, slug: { $ne: slug } },
+        // Not this doctor again (Doctar can hold the same person twice).
+        {
+          specialty: doctor.specialty,
+          city: doctor.city,
+          slug: { $ne: slug },
+          name: { $ne: doctor.name },
+        },
         { sort: { rating: -1, reviewCount: -1, rankScore: -1, slug: 1 }, limit: 3 },
       ),
     ]);
@@ -496,6 +490,8 @@ export async function doctorRoutes(app: FastifyInstance) {
         offersVideo: doctor.schedule?.video !== 'none',
         /** Weekly hours grouped by day, for the profile's timings section and FAQ. */
         timings: scheduleGroups(doctor.schedule as never),
+        /** A second Doctar record of a listed doctor: the listed profile's slug (the page's canonical). */
+        duplicateOf: liveDirectory().duplicateOf.get(slug) ?? null,
         /** Doctar doctors: each place they consult at, with that place's hours and fee (profile reads only). */
         practices: ((doctor.practices ?? []) as Practice[]).map(({ schedule, ...p }) => ({
           ...p,

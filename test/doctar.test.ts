@@ -45,6 +45,7 @@ const D = {
   badSlug: id(),
   faraway: id(),
   hiddenLater: id(),
+  ashaAgain: id(),
 };
 let clashSlug = '';
 
@@ -151,6 +152,14 @@ function fixtures() {
         lastName: 'Away',
         location: 'Atlantis',
       }),
+      // Doctar lists Asha twice: same name, specialty, city and experience, a second slug.
+      doctor({
+        _id: D.ashaAgain,
+        slug: 'asha-testdoctor-general-physician-mumbai',
+        firstName: 'Asha',
+        lastName: 'Testdoctor',
+        isAdminVerified: false,
+      }),
       doctor({
         _id: D.hiddenLater,
         slug: 'dr-kiran-hideme',
@@ -225,8 +234,8 @@ describe('Doctar directory', () => {
     assert.equal(s.status, 'ready');
     assert.equal(s.from, 'doctar');
     // Atlantis isn't a Curxx city, so that doctor isn't even read.
-    assert.equal(s.report!.scanned, 8);
-    assert.equal(s.doctors, 5, 'asha, no-gender, clash, bad slug, hide-me');
+    assert.equal(s.report!.scanned, 9);
+    assert.equal(s.doctors, 6, 'asha (twice), no-gender, clash, bad slug, hide-me');
     assert.equal(s.facilities, 1, 'the pharmacy is not a medical facility type');
     assert.equal(s.report!.skippedDoctors['generic name (a role, e.g. "Specialist")'], 1);
     assert.equal(s.report!.skippedDoctors['organisation, not a person'], 1);
@@ -692,6 +701,31 @@ describe('Doctar directory', () => {
     await call('DELETE', `/admin/doctar/overlays/doctor/${String(D.asha)}`);
     env.DOCTAR_SHOW_DOCTOR_PHOTOS = true;
     await useDoctar(memoryDoctarSource(fixtures()));
+  });
+
+  test('a doctor Doctar lists twice shows once in lists; the second record points to the first', async () => {
+    const list = await get('/doctors?city=mumbai&specialty=general-physician&limit=50');
+    const ashas = list.body.doctors.filter(
+      (d: { name: string }) => d.name === 'Dr. Asha Testdoctor',
+    );
+    assert.deepEqual(
+      ashas.map((d: { slug: string }) => d.slug),
+      ['dr-asha-testdoctor'],
+      'the verified, hospital-linked record',
+    );
+    const again = await get('/doctors/asha-testdoctor-general-physician-mumbai');
+    assert.equal(again.status, 200, 'its own URL still works');
+    assert.equal(again.body.doctor.duplicateOf, 'dr-asha-testdoctor');
+    assert.equal((await get('/doctors/dr-asha-testdoctor')).body.doctor.duplicateOf, null);
+    const similar = (await get('/doctors/dr-ravi-nogender')).body.similar as { name: string }[];
+    assert.equal(similar.filter((d) => d.name === 'Dr. Asha Testdoctor').length <= 1, true);
+    const part = await get('/seo/sitemap/doctors?part=0');
+    assert.ok(
+      !part.body.entries.some(
+        (e: { slug: string }) => e.slug === 'asha-testdoctor-general-physician-mumbai',
+      ),
+      'not in the sitemap',
+    );
   });
 
   test('nothing writes to Doctar: the connection only reads', () => {

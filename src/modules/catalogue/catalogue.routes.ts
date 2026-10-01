@@ -18,6 +18,7 @@ import { CATALOGUE_CACHE, escapeRegex, toDto } from '../../lib/http.js';
 import { ArticleModel } from '../../models/article.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
+import { doctorDto } from '../../lib/doctor-dto.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
 const cityQuery = z.object({ city: z.string().default('bangalore') });
@@ -171,25 +172,10 @@ export async function catalogueRoutes(app: FastifyInstance) {
           limit: 6,
         },
       ),
+      // The website's doctor card: full records, the most experienced first.
       Doctors.find(
         { city: city.slug, specialty: surgery.specialty },
-        {
-          projection: {
-            slug: 1,
-            name: 1,
-            title: 1,
-            experienceYears: 1,
-            rating: 1,
-            reviewCount: 1,
-            area: 1,
-            clinicName: 1,
-            photoUrl: 1,
-            qualification: 1,
-            fee: 1,
-          },
-          sort: { experienceYears: -1, rating: -1, slug: 1 },
-          limit: 4,
-        },
+        { sort: { experienceYears: -1, rating: -1, slug: 1 }, limit: 4 },
       ),
       SpecialtyModel.findOne({ slug: surgery.specialty }, { slug: 1, name: 1, plural: 1 }).lean(),
     ]);
@@ -201,7 +187,7 @@ export async function catalogueRoutes(app: FastifyInstance) {
       city: { slug: city.slug, name: city.name },
       specialty: specialty ? toDto(specialty) : null,
       hospitals: hospitals.map((h) => toDto(h)),
-      surgeons: surgeons.map((d) => toDto(d)),
+      surgeons: surgeons.map((d) => doctorDto(d)),
       related: allSurgeries()
         .filter((s) => s.slug !== slug && s.category === surgery.category)
         .map((s) => surgerySummary(s, city.tier)),

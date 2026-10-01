@@ -4,7 +4,7 @@ import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { FACILITY_TYPES } from '../../db/data/facility-network.js';
 import { distanceKm, locate } from '../../lib/geo.js';
 import { CATALOGUE_CACHE, escapeRegex, pageQuery, paged, toDto } from '../../lib/http.js';
-import { bookingModeOf } from '../../lib/booking-mode.js';
+import { doctorDto } from '../../lib/doctor-dto.js';
 import { ensureSlots, openRequestSlots } from '../../lib/slot-gen.js';
 import { bookableSlot } from '../../lib/slots.js';
 import { facilityDetail } from '../doctar/detail.js';
@@ -47,11 +47,6 @@ const SORTS = {
   rating: { rankScore: -1, rating: -1 },
   reviews: { reviewCount: -1 },
 } as const;
-const doctorDto = ({ schedule, slotsThrough: _t, ...d }: Record<string, any>) => ({
-  ...toDto(d as { _id: unknown }),
-  offersVideo: schedule?.video !== 'none',
-  booking: bookingModeOf({ source: d.source, bookable: d.bookable, schedule }),
-});
 
 /** One page of facilities ordered by real distance from a point (a city has a few thousand at most). */
 async function nearest(
