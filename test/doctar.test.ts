@@ -18,6 +18,8 @@ import {
   refreshDirectory,
   useDoctarSource,
 } from '../src/modules/doctar/directory.js';
+import { setProviders, type SmsMessage } from '../src/lib/notify/providers.js';
+import { AppointmentRequestModel } from '../src/models/appointment-request.model.js';
 import { DirectoryCacheModel, DoctarOverlayModel } from '../src/modules/doctar/models.js';
 import { mappingContext, placeName, withoutPlace } from '../src/modules/doctar/mapping.js';
 import { memoryDoctarSource, type DoctarSource } from '../src/modules/doctar/source.js';
@@ -398,6 +400,75 @@ describe('Doctar directory', () => {
     assert.ok(!('schedule' in practices[0]!));
     // Doctors without schedules: no places, nothing invented.
     assert.deepEqual((await get('/doctors/dr-ravi-nogender')).body.doctor.practices, []);
+  });
+
+  test('Request an appointment: saved as "requested", only test recipients are told, spam is limited', async (t) => {
+    await AppointmentRequestModel.deleteMany({});
+    const sms: SmsMessage[] = [];
+    const emails: string[] = [];
+    setProviders({
+      sms: { name: 'fake', send: async (m) => (sms.push(m), { id: 'x' }) },
+      email: { name: 'fake', send: async (m) => (emails.push(m.to), { id: 'y' }) },
+    });
+    const saved = {
+      phone: env.TEST_NOTIFY_PHONE,
+      email: env.TEST_NOTIFY_EMAIL,
+      mode: env.NOTIFY_MODE,
+    };
+    t.after(async () => {
+      setProviders({});
+      Object.assign(env, {
+        TEST_NOTIFY_PHONE: saved.phone,
+        TEST_NOTIFY_EMAIL: saved.email,
+        NOTIFY_MODE: saved.mode,
+      });
+      await AppointmentRequestModel.deleteMany({});
+    });
+    env.TEST_NOTIFY_PHONE = '9000000001';
+    env.TEST_NOTIFY_EMAIL = 'team@curxx.test';
+    env.NOTIFY_MODE = 'live'; // even "live" never reaches the doctor or hospital
+    const ask = (slug: string, over: Record<string, unknown> = {}) =>
+      call('POST', `/doctors/${slug}/requests`, {
+        name: 'Test Patient',
+        phone: '9876500001',
+        preferredDay: '',
+        preferredTime: 'morning',
+        facilitySlug: 'testcare-hospital-andheri',
+        ...over,
+      });
+    const first = await ask('dr-asha-testdoctor');
+    assert.equal(first.status, 201);
+    assert.equal(first.body.request.status, 'requested');
+    assert.match(first.body.request.reference, /^REQ-/);
+    assert.equal(first.body.request.facilityName, 'Testcare Hospital');
+    // The notice is sent in the background.
+    let row = null;
+    for (let i = 0; i < 50 && !row?.notify?.status; i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+      row = await AppointmentRequestModel.findOne({
+        reference: first.body.request.reference,
+      }).lean();
+    }
+    assert.equal(row?.notify?.status, 'test');
+    assert.deepEqual(
+      sms.map((m) => m.to),
+      ['9000000001'],
+    );
+    assert.deepEqual(emails, ['team@curxx.test']);
+    assert.match(sms[0]!.text, /not sent to the doctor or hospital/);
+
+    assert.equal((await ask('dr-asha-testdoctor')).status, 409, 'one open request per doctor');
+    assert.equal((await ask('dr-asha-testdoctor', { phone: '12345' })).status, 400);
+    assert.equal((await ask('dr-asha-testdoctor', { preferredDay: '2099-01-01' })).status, 400);
+    assert.equal((await ask(clashSlug)).status, 409, 'Curxx doctors are booked on slots instead');
+    assert.equal((await ask('no-such-doctor')).status, 404);
+    assert.equal((await ask('dr-ravi-nogender')).status, 201);
+    assert.equal((await ask('dr-kiran-hideme')).status, 201);
+    assert.equal((await ask(`dr-meera-badslug-${String(D.badSlug).slice(-6)}`)).status, 429);
+
+    const list = await get('/admin/appointment-requests');
+    assert.equal(list.status, 200);
+    assert.equal(list.body.total ?? list.body.items.length, 3);
   });
 
   test('the admin marks a claimed doctor’s medical registration as verified', async () => {

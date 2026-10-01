@@ -89,6 +89,10 @@ copied into Curxx (`src/modules/doctar`):
 - Curxx-only settings (hide, rank, feature, booking, contact overrides) live in `doctar_overlays`, edited in
   the admin panel (Doctar directory, Rankings).
 - While no copy is loaded, listings say "temporarily unavailable" and missing profiles answer 503, not 404.
+- Profiles of Doctar doctors list each practising place with its hours and fee (Doctar schedules), and take
+  "Request an appointment" (`POST /doctors/:slug/requests`, collection `appointment_requests`, status
+  `requested`). The team confirms by phone (admin → Appointment requests); notices go only to
+  `TEST_NOTIFY_EMAIL` / `TEST_NOTIFY_PHONE` or the log, never to the doctor or hospital.
 
 Settings: `DOCTAR_VERIFIED_ONLY`, `DOCTAR_REFRESH_MINUTES`, `DOCTAR_PAGE_SIZE`, `DOCTAR_MAX_DOCTORS`,
 `DOCTAR_TIMEOUT_MS`, `DOCTAR_DETAIL_TTL_SECONDS`, `DOCTAR_POOL_SIZE`, `DOCTAR_ENABLED=false`,

@@ -11,6 +11,7 @@ import { HttpError } from './lib/errors.js';
 import { activityRoutes } from './modules/activity/activity.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { appointmentRoutes } from './modules/appointments/appointment.routes.js';
+import { appointmentRequestRoutes } from './modules/appointment-requests/request.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { catalogueRoutes } from './modules/catalogue/catalogue.routes.js';
 import { doctorRoutes } from './modules/doctors/doctor.routes.js';
@@ -197,6 +198,7 @@ export async function buildApp() {
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(doctorRoutes, { prefix: '/api/v1' });
   await app.register(appointmentRoutes, { prefix: '/api/v1' });
+  await app.register(appointmentRequestRoutes, { prefix: '/api/v1' });
   await app.register(facilityRoutes, { prefix: '/api/v1' });
   await app.register(pharmacyRoutes, { prefix: '/api/v1' });
   await app.register(labRoutes, { prefix: '/api/v1' });

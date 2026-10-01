@@ -20,6 +20,7 @@ import {
   VideoModel,
 } from '../../models/activity.model.js';
 import { AppointmentModel } from '../../models/appointment.model.js';
+import { AppointmentRequestModel } from '../../models/appointment-request.model.js';
 import { CityModel, ConditionModel, SurgeryModel } from '../../models/catalogue.model.js';
 import { ArticleModel } from '../../models/article.model.js';
 import { DoctorModel } from '../../models/doctor.model.js';
@@ -464,6 +465,15 @@ const RESOURCES: Record<string, Resource> = {
       if (doc.status === 'cancelled')
         await SlotModel.updateOne({ _id: doc.slot, status: 'booked' }, { status: 'open' });
     },
+  },
+  'appointment-requests': {
+    model: AppointmentRequestModel,
+    key: '_id',
+    remove: true,
+    editable: ['status', 'note'],
+    search: ['reference', 'doctorSlug', 'doctorName', 'patient.name', 'patient.phone'],
+    sort: { createdAt: -1 },
+    filters: ['status', 'city', 'doctorSlug'],
   },
   orders: {
     model: OrderModel,
