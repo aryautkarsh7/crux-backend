@@ -447,6 +447,8 @@ export type MappingContext = {
   places: Set<string>;
   /** Doctar's own hospital photos are shown (DOCTAR_SHOW_FACILITY_PHOTOS). */
   facilityPhotos: boolean;
+  /** Doctar's own doctor photos are shown (DOCTAR_SHOW_DOCTOR_PHOTOS, default on). */
+  doctorPhotos: boolean;
 };
 
 /**
@@ -456,7 +458,7 @@ export type MappingContext = {
 export function mappingContext(
   cities: City[],
   specialties: SpecialtyRef[],
-  options: { places?: unknown[]; facilityPhotos?: boolean } = {},
+  options: { places?: unknown[]; facilityPhotos?: boolean; doctorPhotos?: boolean } = {},
 ): MappingContext {
   const cityBy = new Map<string, City>();
   for (const c of cities)
@@ -486,6 +488,7 @@ export function mappingContext(
     roleWords,
     places,
     facilityPhotos: options.facilityPhotos === true,
+    doctorPhotos: options.doctorPhotos !== false,
   };
 }
 
@@ -773,7 +776,8 @@ export function mapDoctor(
     recommendPercent: 0,
     languages: languages.length ? languages : ['English'],
     focusAreas: [],
-    photoUrl: /^https?:\/\//.test(text(d.avatar)) ? scrubPracto(text(d.avatar)) : '',
+    photoUrl:
+      ctx.doctorPhotos && /^https?:\/\//.test(text(d.avatar)) ? scrubPracto(text(d.avatar)) : '',
     // Bios come from the website's template (lib/doctor-content.ts), not from Doctar.
     about: '',
     // `verified` means Curxx checked the credentials; Doctar's check doesn't count.

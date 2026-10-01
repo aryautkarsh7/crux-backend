@@ -97,7 +97,8 @@ copied into Curxx (`src/modules/doctar`):
 Settings: `DOCTAR_VERIFIED_ONLY`, `DOCTAR_REFRESH_MINUTES`, `DOCTAR_PAGE_SIZE`, `DOCTAR_MAX_DOCTORS`,
 `DOCTAR_TIMEOUT_MS`, `DOCTAR_DETAIL_TTL_SECONDS`, `DOCTAR_POOL_SIZE`, `DOCTAR_ENABLED=false`,
 `DOCTAR_SHOW_FACILITY_PHOTOS` (default off: hospitals' own Doctar photos are hidden and the website shows
-its placeholder; a photo set in the admin always shows) (see `config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
+its placeholder; a photo set in the admin always shows), `DOCTAR_SHOW_DOCTOR_PHOTOS` (default on: doctors'
+own Doctar photos; off = the website's generic avatar by gender) (see `config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
 removes the copies left by the old import.
 
 New accounts get a sample "demo locker" (records, consents, a made-up ABHA number) only with

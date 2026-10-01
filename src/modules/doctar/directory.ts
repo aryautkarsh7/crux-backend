@@ -144,6 +144,7 @@ export function currentMappingContext() {
           mappingContext(allCities(), specialties, {
             places: doctarPlaces,
             facilityPhotos: env.DOCTAR_SHOW_FACILITY_PHOTOS,
+            doctorPhotos: env.DOCTAR_SHOW_DOCTOR_PHOTOS,
           }),
         ),
     };
@@ -460,6 +461,7 @@ export async function loadSavedIndex() {
     if (!cached || index) return false;
     // A copy saved while Doctar's hospital photos were on doesn't bring them back once they're off.
     if (!env.DOCTAR_SHOW_FACILITY_PHOTOS) for (const f of cached.facilities) f.photoUrl = '';
+    if (!env.DOCTAR_SHOW_DOCTOR_PHOTOS) for (const d of cached.doctors) d.photoUrl = '';
     index = cached;
     await publish();
     status = 'ready';

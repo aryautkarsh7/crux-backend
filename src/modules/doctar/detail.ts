@@ -114,7 +114,8 @@ export async function doctorDetail(doc: Doc): Promise<Doc> {
   if (!fresh) return doc;
   const merged: Doc = { ...fresh, _id: doc._id };
   for (const key of KEEP_DOCTOR) merged[key] = doc[key];
-  if (doc.photoUrl && !fresh.photoUrl) merged.photoUrl = doc.photoUrl;
+  // A photo set in the admin panel wins; Doctar's own only when DOCTAR_SHOW_DOCTOR_PHOTOS is on.
+  merged.photoUrl = doc.photoUrl || fresh.photoUrl;
   return merged;
 }
 

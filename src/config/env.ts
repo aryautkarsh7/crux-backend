@@ -142,6 +142,14 @@ function doctarSettings() {
      * (adverts, close-ups), so the website shows its placeholder. A photo set in the admin panel always shows.
      */
     DOCTAR_SHOW_FACILITY_PHOTOS: flag(process.env.DOCTAR_SHOW_FACILITY_PHOTOS),
+    /**
+     * Show doctors' own photos from Doctar (default on). Off: the website shows its generic doctor avatar
+     * (by gender). A photo set in the admin panel always shows.
+     */
+    DOCTAR_SHOW_DOCTOR_PHOTOS:
+      String(process.env.DOCTAR_SHOW_DOCTOR_PHOTOS ?? 'true')
+        .trim()
+        .toLowerCase() !== 'false',
     /** Full rebuild of the listing index; Doctar has no updatedAt index yet, so no incremental refresh. */
     DOCTAR_REFRESH_MINUTES: int(process.env.DOCTAR_REFRESH_MINUTES, 60, 5, 24 * 60),
     /** Records per read while building the index (memory vs number of round trips). */

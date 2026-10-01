@@ -116,6 +116,7 @@ function fixtures() {
         firstName: 'Asha',
         lastName: 'Testdoctor',
         registrationNumber: 'MMC-2011-12345',
+        avatar: 'https://doctar.example/photos/asha.jpg',
       }),
       doctor({
         _id: D.noGender,
@@ -675,6 +676,21 @@ describe('Doctar directory', () => {
     clearDetailCache();
     assert.equal(await loadSavedIndex(), true);
     assert.deepEqual(await photos(), { card: '', page: '', gallery: [], doctorPage: '' });
+    await useDoctar(memoryDoctarSource(fixtures()));
+  });
+
+  test('doctor photos from Doctar show unless DOCTAR_SHOW_DOCTOR_PHOTOS is off; one set in the admin always shows', async (t) => {
+    t.after(() => (env.DOCTAR_SHOW_DOCTOR_PHOTOS = true));
+    const photo = async () => (await get('/doctors/dr-asha-testdoctor')).body.doctor.photoUrl;
+    assert.equal(await photo(), 'https://doctar.example/photos/asha.jpg');
+    env.DOCTAR_SHOW_DOCTOR_PHOTOS = false;
+    await useDoctar(memoryDoctarSource(fixtures()));
+    assert.equal(await photo(), '', 'the website shows its generic avatar instead');
+    const own = 'https://curxx.example/asha.jpg';
+    await call('PUT', `/admin/doctar/overlays/doctor/${String(D.asha)}`, { photoUrl: own });
+    assert.equal(await photo(), own);
+    await call('DELETE', `/admin/doctar/overlays/doctor/${String(D.asha)}`);
+    env.DOCTAR_SHOW_DOCTOR_PHOTOS = true;
     await useDoctar(memoryDoctarSource(fixtures()));
   });
 
