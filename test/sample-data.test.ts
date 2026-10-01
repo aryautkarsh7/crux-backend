@@ -265,10 +265,12 @@ describe('sample data hidden from the website', () => {
       mumbai.specialties,
       (await all(() => DoctorModel.distinct('specialty', { city: 'mumbai', ...REAL }))).sort(),
     );
-    assert.ok(
-      mumbai.localities.doctors.includes('andheri-west') &&
-        mumbai.localities['general-physician'].includes('andheri-west'),
+    // Locality pages are listed only with 3+ doctors (fewer: noindex on the website, thin content).
+    const inAndheri = await all(() =>
+      DoctorModel.countDocuments({ city: 'mumbai', area: 'Andheri West', ...REAL }),
     );
+    assert.ok(inAndheri > 0);
+    assert.equal((mumbai.localities.doctors ?? []).includes('andheri-west'), inAndheri >= 3);
     assert.ok(mumbai.conditions.includes('fever'), 'condition pages for specialties with doctors');
     assert.ok(!mumbai.conditions.includes('acne') || mumbai.specialties.includes('dermatologist'));
     for (const c of cities)

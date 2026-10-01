@@ -15,6 +15,8 @@ import { Doctors, Facilities } from '../doctar/store.js';
 import { surgeryStats } from './surgery-stats.js';
 
 const CACHE_MS = 10 * 60 * 1000;
+/** Locality pages with fewer doctors are noindex on the website (thin content), so they aren't listed. */
+export const MIN_LOCALITY_DOCTORS = 3;
 
 type Dated = { slug: string; updatedAt?: Date | null };
 type Listed = Dated & { city: string; specialty: string; area?: string; type?: string };
@@ -49,16 +51,22 @@ async function compute() {
     const surgery = await surgeryStats(city.slug);
     if (!here.length && !places.length && !surgery.indexable) continue;
     const specialties = [...new Set(here.map((d) => d.specialty))].sort();
-    // Locality pages that have doctors: "doctors" (all specialties) and each specialty.
-    const localities: Record<string, Set<string>> = {};
+    // Locality pages with enough doctors to be indexed: "doctors" (all specialties) and each specialty.
+    const counts: Record<string, Map<string, number>> = {};
     for (const d of here) {
       const locality = city.localities.find(
         (l) => l.name.toLowerCase() === (d.area ?? '').toLowerCase(),
       );
       if (!locality) continue;
-      for (const key of ['doctors', d.specialty])
-        (localities[key] ??= new Set()).add(locality.slug);
+      for (const key of ['doctors', d.specialty]) {
+        const m = (counts[key] ??= new Map());
+        m.set(locality.slug, (m.get(locality.slug) ?? 0) + 1);
+      }
     }
+    const localities: Record<string, Set<string>> = {};
+    for (const [key, m] of Object.entries(counts))
+      for (const [slug, n] of m)
+        if (n >= MIN_LOCALITY_DOCTORS) (localities[key] ??= new Set()).add(slug);
     cities.push({
       slug: city.slug,
       doctors: here.length,
