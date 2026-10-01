@@ -448,7 +448,7 @@ const RESOURCES: Record<string, Resource> = {
     key: '_id',
     remove: true,
     editable: ['status', 'note'],
-    search: ['name', 'phone', 'email', 'organisation', 'message'],
+    search: ['name', 'phone', 'email', 'organisation', 'message', 'claim'],
     sort: { createdAt: -1 },
     filters: ['kind', 'status', 'city', 'role'],
   },

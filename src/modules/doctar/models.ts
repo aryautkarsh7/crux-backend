@@ -15,6 +15,8 @@ const overlaySchema = new Schema(
     /** 1 = first in its city (+ specialty for doctors); 0 = normal order. */
     rank: { type: Number, default: 0 },
     featured: { type: Boolean, default: false },
+    /** Doctors: the doctor claimed the profile and the team checked their medical council registration. */
+    registrationVerified: { type: Boolean, default: false },
     /** Taken off the website (the Doctar record stays untouched). */
     hidden: { type: Boolean, default: false },
     /** False = never bookable online, whatever IMPORTED_BOOKABLE says. */

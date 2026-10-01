@@ -77,6 +77,7 @@ const KEEP_DOCTOR = [
   'rank',
   'rankScore',
   'featured',
+  'registrationVerified',
   'bookable',
   'phone',
   'whatsapp',

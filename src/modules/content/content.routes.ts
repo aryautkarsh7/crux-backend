@@ -61,6 +61,13 @@ const leadBody = z
       .enum(['doctor', 'hospital', 'professional', 'diagnostic'])
       .or(z.literal(''))
       .default(''),
+    /** "Claim this profile": the slug of the doctor profile the person says is theirs. */
+    claim: z
+      .string()
+      .trim()
+      .max(160)
+      .regex(/^[a-z0-9-]*$/, 'Not a profile address')
+      .default(''),
   })
   .refine((b) => b.phone || b.email, {
     message: 'Share a phone number or email so we can reach you',

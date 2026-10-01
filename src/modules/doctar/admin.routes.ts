@@ -24,6 +24,7 @@ const overlayBody = z
   .object({
     rank: z.coerce.number().int().min(0).max(9999),
     featured: z.boolean(),
+    registrationVerified: z.boolean(),
     hidden: z.boolean(),
     bookable: z.boolean(),
     phone: z

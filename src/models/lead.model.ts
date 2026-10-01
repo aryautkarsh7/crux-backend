@@ -20,6 +20,8 @@ const leadSchema = new Schema(
     source: { type: String, default: '' },
     /** Partner sign-ups: doctor, hospital (owner), professional (nurse, compounder…), diagnostic (centre). */
     role: { type: String, default: '' },
+    /** "Claim this profile": the doctor profile (slug) the person says is theirs; the team verifies it. */
+    claim: { type: String, default: '' },
     /** Follow-up state, set by the team in the admin panel. */
     status: {
       type: String,

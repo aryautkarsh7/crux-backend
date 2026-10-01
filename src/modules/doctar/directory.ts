@@ -342,6 +342,7 @@ async function publish() {
           doc.rankScore = rankScoreOf(o.rank ?? 0);
           doc.rank = o.rank ?? 0;
           doc.featured = Boolean(o.featured);
+          if (kind === 'doctor' && o.registrationVerified) doc.registrationVerified = true;
           if (o.bookable === false) doc.bookable = false;
           if (o.phone) doc.phone = o.phone;
           if (o.whatsapp) doc.whatsapp = o.whatsapp;

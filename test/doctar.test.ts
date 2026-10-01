@@ -380,6 +380,25 @@ describe('Doctar directory', () => {
     assert.equal((await get('/admin/doctar/status')).body.overlays, 0);
   });
 
+  test('the admin marks a claimed doctor’s medical registration as verified', async () => {
+    assert.ok(!(await get('/doctors/dr-asha-testdoctor')).body.doctor.registrationVerified);
+    const set = await call('PUT', `/admin/doctar/overlays/doctor/${String(D.asha)}`, {
+      registrationVerified: true,
+    });
+    assert.equal(set.status, 200);
+    clearDetailCache();
+    assert.equal((await get('/doctors/dr-asha-testdoctor')).body.doctor.registrationVerified, true);
+    const claim = await call('POST', '/leads', {
+      kind: 'provider',
+      role: 'doctor',
+      claim: 'dr-asha-testdoctor',
+      phone: '9876543210',
+    });
+    assert.equal(claim.status, 201);
+    await call('DELETE', `/admin/doctar/overlays/doctor/${String(D.asha)}`);
+    assert.ok(!(await get('/doctors/dr-asha-testdoctor')).body.doctor.registrationVerified);
+  });
+
   test('verified-only setting lists only Doctar’s admin-verified doctors', async (t) => {
     t.after(() => (env.DOCTAR_VERIFIED_ONLY = false));
     env.DOCTAR_VERIFIED_ONLY = true;
