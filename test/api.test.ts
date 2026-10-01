@@ -506,6 +506,23 @@ describe('content, search & triage', () => {
       (await call('POST', '/leads', { body: { kind: 'provider', phone: '12345' } })).status,
       400,
     );
+    // Partner sign-ups from Create account carry the picked profile type.
+    assert.equal(
+      (
+        await call('POST', '/leads', {
+          body: { kind: 'provider', role: 'diagnostic', phone: '9876543210', name: 'Test Lab' },
+        })
+      ).status,
+      201,
+    );
+    assert.equal(
+      (
+        await call('POST', '/leads', {
+          body: { kind: 'provider', role: 'admin', phone: '9876543210' },
+        })
+      ).status,
+      400,
+    );
   });
 });
 

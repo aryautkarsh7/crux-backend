@@ -18,6 +18,8 @@ const leadSchema = new Schema(
     specialty: { type: String, default: '' },
     message: { type: String, default: '' },
     source: { type: String, default: '' },
+    /** Partner sign-ups: doctor, hospital (owner), professional (nurse, compounder…), diagnostic (centre). */
+    role: { type: String, default: '' },
     /** Follow-up state, set by the team in the admin panel. */
     status: {
       type: String,

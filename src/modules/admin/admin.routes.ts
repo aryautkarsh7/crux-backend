@@ -450,7 +450,7 @@ const RESOURCES: Record<string, Resource> = {
     editable: ['status', 'note'],
     search: ['name', 'phone', 'email', 'organisation', 'message'],
     sort: { createdAt: -1 },
-    filters: ['kind', 'status', 'city'],
+    filters: ['kind', 'status', 'city', 'role'],
   },
   appointments: {
     model: AppointmentModel,

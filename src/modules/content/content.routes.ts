@@ -56,6 +56,11 @@ const leadBody = z
     specialty: z.string().trim().max(60).default(''),
     message: z.string().trim().max(1000).default(''),
     source: z.string().trim().max(60).default(''),
+    /** Partner sign-ups: the profile type picked on Create account (no account is created for it). */
+    role: z
+      .enum(['doctor', 'hospital', 'professional', 'diagnostic'])
+      .or(z.literal(''))
+      .default(''),
   })
   .refine((b) => b.phone || b.email, {
     message: 'Share a phone number or email so we can reach you',
