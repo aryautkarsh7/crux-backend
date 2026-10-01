@@ -123,4 +123,36 @@ describe('dynamic SEO figures', () => {
     assert.match(body.doctor.timings[0].hours[0], /\d:\d\d [AP]M – \d/);
     assert.ok(body.doctor.timings[0].days.length > 0);
   });
+
+  test('single surgery template: surgeons, hospitals, areas, cities, nearby and related from real figures', async () => {
+    const { status, body } = await get('/surgeries/hernia-surgery?city=mumbai');
+    assert.equal(status, 200);
+    const t = body.template;
+    assert.ok(t, 'hernia surgery maps to a specialty');
+    assert.equal(t.state, 'Maharashtra');
+    const surgeons = await DoctorModel.countDocuments({
+      city: 'mumbai',
+      specialty: body.surgery.specialty,
+    });
+    assert.equal(t.surgeons.count, surgeons);
+    assert.ok(t.surgeons.top.length <= 10);
+    const exp = t.surgeons.top.map((d: { experienceYears: number }) => d.experienceYears);
+    assert.deepEqual(
+      exp,
+      [...exp].sort((a, b) => b - a),
+      'most experienced first',
+    );
+    assert.ok(t.hospitals.top.length <= 10);
+    assert.ok(
+      t.hospitals.top.every((h: { beds: number | null }) => h.beds === null || h.beds > 0),
+      'no invented beds',
+    );
+    assert.ok(t.localities.length <= 8);
+    assert.ok(t.cities.some((c: { slug: string }) => c.slug === 'mumbai'));
+    const mumbai = t.cities.find((c: { slug: string }) => c.slug === 'mumbai');
+    assert.deepEqual(mumbai.cost, body.surgery.cost, 'the same cost as the page');
+    assert.equal(t.nearby.length, 5);
+    assert.ok(!t.nearby.some((c: { slug: string }) => c.slug === 'mumbai'));
+    assert.ok(t.related.length > 0 && t.related.length <= 6);
+  });
 });

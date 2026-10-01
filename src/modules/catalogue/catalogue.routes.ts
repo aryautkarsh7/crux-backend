@@ -19,6 +19,7 @@ import { ArticleModel } from '../../models/article.model.js';
 import { LabTestModel } from '../../models/lab-test.model.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { doctorDto } from '../../lib/doctor-dto.js';
+import { singleSurgery } from '../seo/single-surgery.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
 const cityQuery = z.object({ city: z.string().default('bangalore') });
@@ -181,9 +182,12 @@ export async function catalogueRoutes(app: FastifyInstance) {
     ]);
     const [low, high] = cityCost(surgery.cost, city.tier);
     const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+    // The single surgery template's facts; none when the surgery has no specialty on Curxx.
+    const template = specialty ? await singleSurgery(surgery, city.slug) : null;
     reply.header('cache-control', CATALOGUE_CACHE);
     return {
       surgery: { ...surgery, cost: [low, high] },
+      template,
       city: { slug: city.slug, name: city.name },
       specialty: specialty ? toDto(specialty) : null,
       hospitals: hospitals.map((h) => toDto(h)),
