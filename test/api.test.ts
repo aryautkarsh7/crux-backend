@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { buildApp } from '../src/app.js';
+import { env } from '../src/config/env.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connect.js';
 import { MedicineModel } from '../src/models/medicine.model.js';
 import { OrderModel } from '../src/models/order.model.js';
@@ -520,6 +521,38 @@ describe('auth & profile', () => {
     assert.equal(records.body.records.length, 7);
     const access = await call('GET', '/access', { token });
     assert.equal(access.body.grants.length, 4);
+  });
+
+  test('with sample data off, a new account starts with an empty locker that still works', async (t) => {
+    env.SHOW_SAMPLE_DATA = false;
+    t.after(() => (env.SHOW_SAMPLE_DATA = true));
+    const { token, user } = await signIn();
+    assert.equal(user.abhaId, '', 'no made-up ABHA number');
+    assert.equal((await call('GET', '/records', { token })).body.records.length, 0);
+    assert.equal((await call('GET', '/access', { token })).body.grants.length, 0);
+    // Upload, share and delete still work.
+    const created = await call('POST', '/records', {
+      token,
+      body: {
+        kind: 'lab_report',
+        title: 'My CBC',
+        date: '2026-09-01',
+        fileName: 'cbc.pdf',
+        fileSize: 20000,
+        mimeType: 'application/pdf',
+      },
+    });
+    assert.equal(created.status, 201);
+    const grant = await call('POST', '/access', {
+      token,
+      body: { granteeName: 'Dr. Test', granteeKind: 'doctor', days: 7 },
+    });
+    assert.equal(grant.status, 201);
+    assert.equal(
+      (await call('DELETE', `/records/${created.body.record.id}`, { token })).status,
+      200,
+    );
+    assert.equal((await call('GET', '/records', { token })).body.records.length, 0);
   });
 
   test('login and register are separate', async () => {

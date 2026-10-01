@@ -96,6 +96,10 @@ Settings: `DOCTAR_VERIFIED_ONLY`, `DOCTAR_REFRESH_MINUTES`, `DOCTAR_PAGE_SIZE`, 
 its placeholder; a photo set in the admin always shows) (see `config/env.ts`). `npm run doctar:report` prints what would be listed; `npm run doctar:remove-imports`
 removes the copies left by the old import.
 
+New accounts get a sample "demo locker" (records, consents, a made-up ABHA number) only with
+`SHOW_SAMPLE_DATA` on. `npm run records:remove-demo -- --db <name>` counts demo records left from older
+versions; add `--apply` to remove them (a JSON copy is saved first).
+
 ## Sign-in
 
 Phone → 6-digit code → JWT. Codes are generated, hashed and expire in 5 minutes. Until an SMS

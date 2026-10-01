@@ -1,4 +1,5 @@
 import type { Types } from 'mongoose';
+import { env } from '../../config/env.js';
 import { AccessGrantModel } from '../../models/access-grant.model.js';
 import { HealthRecordModel } from '../../models/health-record.model.js';
 import { UserModel } from '../../models/user.model.js';
@@ -6,17 +7,19 @@ import { UserModel } from '../../models/user.model.js';
 const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 const daysAhead = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
 
-/** 14-digit ABHA number, stable per phone so the same account always shows the same ID. */
-function abhaFor(phone: string) {
+/** 14-digit ABHA number, stable per phone so the same account always shows the same ID. Made up: demo only. */
+export function demoAbhaFor(phone: string) {
   const digits = (phone + '73194028').slice(0, 14);
   return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}-${digits.slice(10, 14)}`;
 }
 
 /**
  * Gives a first-time account a realistic health locker (records, lab findings, consents)
- * so every records screen has something to show. Runs once per user.
+ * so every records screen has something to show. Runs once per user, and only with SHOW_SAMPLE_DATA on
+ * (tests, demos): real accounts start with an empty locker and no made-up ABHA number.
  */
 export async function ensureDemoLocker(userId: Types.ObjectId | string, phone: string) {
+  if (!env.SHOW_SAMPLE_DATA) return;
   const user = await UserModel.findOneAndUpdate(
     { _id: userId, demoSeededAt: { $exists: false } },
     { $set: { demoSeededAt: new Date() } },
@@ -25,9 +28,18 @@ export async function ensureDemoLocker(userId: Types.ObjectId | string, phone: s
   if (!user) return; // already seeded
 
   if (!user.abhaId)
-    await UserModel.updateOne({ _id: userId }, { $set: { abhaId: abhaFor(phone) } });
+    await UserModel.updateOne({ _id: userId }, { $set: { abhaId: demoAbhaFor(phone) } });
 
-  const records = await HealthRecordModel.insertMany([
+  const records = await HealthRecordModel.insertMany(demoRecords(userId));
+
+  const [prescription, fullBody] = records;
+  await AccessGrantModel.insertMany(demoGrants(userId, prescription!._id, fullBody!._id));
+}
+
+type Id = Types.ObjectId | string;
+
+function demoRecords(userId: Id) {
+  return [
     {
       user: userId,
       kind: 'prescription',
@@ -168,10 +180,11 @@ export async function ensureDemoLocker(userId: Types.ObjectId | string, phone: s
       fileName: 'Discharge_AsterCMI.pdf',
       fileSize: 540_000,
     },
-  ]);
+  ];
+}
 
-  const [prescription, fullBody] = records;
-  await AccessGrantModel.insertMany([
+function demoGrants(userId: Id, prescriptionId: Id, fullBodyId: Id) {
+  return [
     {
       user: userId,
       grantee: {
@@ -200,7 +213,7 @@ export async function ensureDemoLocker(userId: Types.ObjectId | string, phone: s
       user: userId,
       grantee: { name: 'Family member', kind: 'family', detail: 'Spouse · +91 98•••• ••21' },
       scope: 'selected',
-      records: [prescription!._id, fullBody!._id],
+      records: [prescriptionId, fullBodyId],
       expiresAt: daysAhead(300),
       status: 'active',
     },
@@ -208,9 +221,15 @@ export async function ensureDemoLocker(userId: Types.ObjectId | string, phone: s
       user: userId,
       grantee: { name: 'Star Health Insurance', kind: 'insurer', detail: 'Claim #SH-22871' },
       scope: 'selected',
-      records: [fullBody!._id],
+      records: [fullBodyId],
       expiresAt: daysAgo(30),
       status: 'revoked',
     },
-  ]);
+  ];
 }
+
+/** What identifies the demo locker's records and consents, for scripts/remove-demo-records.ts. */
+export const demoLockerKeys = () => ({
+  records: demoRecords('demo').map((r) => ({ title: r.title, fileName: r.fileName })),
+  grantees: demoGrants('demo', 'demo', 'demo').map((g) => g.grantee.name),
+});
