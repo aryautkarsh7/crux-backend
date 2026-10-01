@@ -790,5 +790,63 @@ export function mapDoctor(
     rankScore: null,
     managed: false,
   };
+  // Profile page only: every listed place the doctor consults at, with its own hours and fee.
+  if (detail) doc.practices = practicesOf(schedules, facilityFor, fee);
   return { doc };
+}
+
+export type Practice = {
+  facilitySlug: string;
+  name: string;
+  area: string;
+  address: string;
+  city: string;
+  /** Curxx weekly schedule from Doctar's (null when Doctar has no hours for this place). */
+  schedule: Schedule | null;
+  consultHours: string;
+  fee: number;
+  /** True when the fee is this place's own (Doctar schedule), not the doctor's general one. */
+  feeFromSchedule: boolean;
+};
+
+/**
+ * The places a doctor consults at, from Doctar's schedules: only places Curxx lists (`facilityFor`), each
+ * once, active schedules first and inactive ones left out. Hours and fee are that schedule's; never
+ * invented (no hours → none shown; no fee → the doctor's own).
+ */
+export function practicesOf(
+  schedules: DoctarSchedule[],
+  facilityFor: (hospitalId: string) => FacilityDoc | undefined,
+  doctorFee: number,
+): Practice[] {
+  const out: Practice[] = [];
+  for (const s of [...schedules].sort(
+    (a, b) => Number(b.isActive === true) - Number(a.isActive === true),
+  )) {
+    if (s.isActive === false) continue;
+    const f = facilityFor(String(s.hospital));
+    if (!f || out.some((p) => p.facilitySlug === f.slug)) continue;
+    const hours = weekly(s.weeklySchedule, {
+      open: 'isAvailable',
+      start: 'startTime',
+      end: 'endTime',
+    });
+    const schedule: Schedule | null = hours
+      ? { ...hours, step: s.slotDuration || 30, video: 'none' }
+      : null;
+    const ownFee = Number(s.consultationFee);
+    const feeFromSchedule = ownFee >= 50 && ownFee <= 20_000;
+    out.push({
+      facilitySlug: f.slug,
+      name: String(f.name),
+      area: String(f.area),
+      address: String(f.address ?? ''),
+      city: String(f.city),
+      schedule,
+      consultHours: schedule ? describeSchedule(schedule) : '',
+      fee: feeFromSchedule ? ownFee : doctorFee,
+      feeFromSchedule,
+    });
+  }
+  return out;
 }

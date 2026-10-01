@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { scheduleGroups } from '../../db/data/doctor-network.js';
+import type { Practice } from '../doctar/mapping.js';
 import { SPECIALTY_ALIASES, SPECIALTY_CATEGORIES } from '../../db/data/specialties.js';
 import {
   cities as allCities,
@@ -495,6 +496,11 @@ export async function doctorRoutes(app: FastifyInstance) {
         offersVideo: doctor.schedule?.video !== 'none',
         /** Weekly hours grouped by day, for the profile's timings section and FAQ. */
         timings: scheduleGroups(doctor.schedule as never),
+        /** Doctar doctors: each place they consult at, with that place's hours and fee (profile reads only). */
+        practices: ((doctor.practices ?? []) as Practice[]).map(({ schedule, ...p }) => ({
+          ...p,
+          timings: schedule ? scheduleGroups(schedule as never) : [],
+        })),
         // Always computed from the reviews, so every screen shows the same numbers.
         reviewSummary: {
           average: rating[0] ? Math.round(rating[0].average * 10) / 10 : doctor.rating,

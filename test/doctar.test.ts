@@ -47,8 +47,8 @@ const D = {
 let clashSlug = '';
 
 const week = {
-  monday: { isAvailable: true, slots: [{ startTime: '10:00', endTime: '13:00' }] },
-  wednesday: { isAvailable: true, slots: [{ startTime: '10:00', endTime: '13:00' }] },
+  monday: { isAvailable: true, slots: [{ startTime: '10:00 AM', endTime: '01:00 PM' }] },
+  wednesday: { isAvailable: true, slots: [{ startTime: '10:00 AM', endTime: '01:00 PM' }] },
 };
 const doctor = (over: Record<string, unknown>) => ({
   qualification: 'MBBS, MD',
@@ -378,6 +378,26 @@ describe('Doctar directory', () => {
     await call('DELETE', `/admin/doctar/overlays/doctor/${String(D.asha)}`);
     assert.equal((await get('/doctors/dr-kiran-hideme')).status, 200, 'back to Doctar’s record');
     assert.equal((await get('/admin/doctar/status')).body.overlays, 0);
+  });
+
+  test('the profile lists each place the doctor consults at, with Doctar’s days, hours and fee', async () => {
+    const res = await get('/doctors/dr-asha-testdoctor');
+    assert.equal(res.status, 200);
+    const practices = res.body.doctor.practices as {
+      facilitySlug: string;
+      name: string;
+      fee: number;
+      feeFromSchedule: boolean;
+      timings: { days: string; hours: string[] }[];
+    }[];
+    assert.equal(practices.length, 1, 'the pharmacy and unknown places are left out');
+    assert.equal(practices[0]!.facilitySlug, 'testcare-hospital-andheri');
+    assert.equal(practices[0]!.fee, 700, 'that place’s own fee');
+    assert.equal(practices[0]!.feeFromSchedule, true);
+    assert.ok(practices[0]!.timings.length > 0, 'Mon and Wed hours');
+    assert.ok(!('schedule' in practices[0]!));
+    // Doctors without schedules: no places, nothing invented.
+    assert.deepEqual((await get('/doctors/dr-ravi-nogender')).body.doctor.practices, []);
   });
 
   test('the admin marks a claimed doctor’s medical registration as verified', async () => {
