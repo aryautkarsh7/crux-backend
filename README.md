@@ -6,10 +6,12 @@ Node + TypeScript API for the Curxx healthcare app. Fastify, MongoDB (Mongoose),
 
 ```bash
 npm install
-cp .env.example .env     # then set JWT_SECRET
+cp .env.example .env     # then fill the <SECRET> values (JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD)
 npm run seed             # specialties, doctors and 7 days of slots
-npm run dev              # http://localhost:4000
+npm run dev              # http://localhost:4000, restarts on changes
 ```
+
+Every variable is listed, with one line each, in `.env.example`.
 
 No database install needed in development: if `MONGODB_URI` is empty, a local MongoDB is
 downloaded once and started automatically, storing data in `.data/mongo`. For production set
