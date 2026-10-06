@@ -926,7 +926,12 @@ export const SURGERIES: SurgerySeed[] = (() => {
   for (const t of TREATMENTS) {
     const existing = bySlug.get(t.slug);
     if (existing) {
-      Object.assign(existing, { description: t.description, cost: t.cost, stay: t.stay });
+      Object.assign(existing, {
+        description: t.description,
+        cost: t.cost,
+        stay: t.stay,
+        ...(t.recovery ? { recovery: t.recovery } : {}),
+      });
       continue;
     }
     bySlug.set(t.slug, {
@@ -940,7 +945,7 @@ export const SURGERIES: SurgerySeed[] = (() => {
       techniques: [],
       durationMinutes: UNKNOWN_DURATION,
       stay: t.stay,
-      recovery: t.recovery ? `${t.recovery} (full recovery)` : '',
+      recovery: t.recovery,
       anaesthesia: '',
       cost: t.cost,
       insurance: false,

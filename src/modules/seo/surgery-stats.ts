@@ -5,6 +5,7 @@
  */
 import { PROCEDURE_DIRECTORY } from '../../db/data/procedure-directory.js';
 import { cities as allCities, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
+import { cleanAreaCounts } from '../../lib/areas.js';
 import { directoryVersion } from '../doctar/directory.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
@@ -106,11 +107,13 @@ async function compute(city: string | null) {
   for (const d of surgeons)
     if (d.facilitySlug) surgeonsAt.set(d.facilitySlug, (surgeonsAt.get(d.facilitySlug) ?? 0) + 1);
 
-  const areaCounts = new Map<string, number>();
-  for (const h of hospitals) if (h.area) areaCounts.set(h.area, (areaCounts.get(h.area) ?? 0) + 1);
-  const areas = [...areaCounts]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const areas = cityInfo
+    ? cleanAreaCounts(
+        hospitals.map((h) => h.area),
+        cityInfo.name,
+        cityInfo.localities.map((l) => l.name),
+      )
+    : [];
 
   const surgeonTable = SURGEON_TABLE.map((slug) => {
     const group = surgeons.filter((d) => d.specialty === slug);
@@ -168,7 +171,7 @@ async function compute(city: string | null) {
     hospitals: hospitals.slice(0, 10).map((h) => ({
       slug: h.slug,
       name: h.name,
-      area: h.area,
+      area: cityInfo && areas.some((a) => a.name === h.area) ? h.area : '',
       city: h.city,
       surgeons: surgeonsAt.get(h.slug) ?? 0,
       departments: (h.departments ?? []).slice(0, 3),

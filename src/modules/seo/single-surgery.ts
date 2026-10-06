@@ -7,6 +7,7 @@
  */
 import { cities as allCities, surgeries as allSurgeries } from '../../lib/catalogue-store.js';
 import type { SurgeryRecord } from '../../lib/catalogue-store.js';
+import { cleanAreaCounts } from '../../lib/areas.js';
 import { directoryVersion } from '../doctar/directory.js';
 import { Doctors, Facilities } from '../doctar/store.js';
 
@@ -67,8 +68,15 @@ async function compute(surgery: SurgeryRecord, citySlug: string) {
     Facilities.countBy('city', hospitalsWhere),
   ]);
 
-  // An area that is just the city's name means "locality unknown": not an area.
-  const isArea = (a?: string) => Boolean(a) && a!.toLowerCase() !== city.name.toLowerCase();
+  // Only real localities count as areas (not the city's own name, streets, floors or building names).
+  const clean = new Set(
+    cleanAreaCounts(
+      [...surgeons, ...hospitals].map((x) => x.area),
+      city.name,
+      city.localities.map((l) => l.name),
+    ).map((a) => a.name),
+  );
+  const isArea = (a?: string) => Boolean(a) && clean.has(a!);
   const byArea = new Map<string, { surgeons: string[]; hospitals: string[] }>();
   const slot = (a: string) =>
     byArea.get(a) ?? byArea.set(a, { surgeons: [], hospitals: [] }).get(a)!;
