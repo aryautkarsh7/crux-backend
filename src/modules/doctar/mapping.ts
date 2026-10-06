@@ -519,6 +519,20 @@ function departmentsOf(value: unknown, ctx: MappingContext) {
   return [...byKey.values()].slice(0, 30);
 }
 
+/** "MBBS, MD, MBBS, MD" → "MBBS, MD": each comma-separated part once, in order. */
+export function uniqueParts(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/\s*,\s*/)
+    .filter((part) => {
+      const key = part.toLowerCase();
+      if (!part || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(', ');
+}
+
 /** A Curxx locality named in the text, else Doctar's locality when it reads like one, else ''. */
 function areaFor(city: City, locality: string, address = '') {
   const hay = `${locality} ${address}`.toLowerCase();
@@ -677,7 +691,7 @@ export function mapDoctor(
       .some((w) => ctx.roleWords.has(w))
   )
     return { skip: 'generic name (a role, e.g. "Specialist")' };
-  const qualification = scrubPracto(text(d.qualification));
+  const qualification = uniqueParts(scrubPracto(text(d.qualification)));
   if (!qualification) return { skip: 'no qualification' };
   const experience = Number(d.experience);
   if (

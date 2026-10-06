@@ -32,3 +32,16 @@ describe('clean areas', () => {
     assert.deepEqual(out, [{ name: 'Vile Parle East', count: 3 }]);
   });
 });
+
+import { uniqueParts } from '../src/modules/doctar/mapping.js';
+
+describe('qualification text', () => {
+  it('lists each degree once', () => {
+    assert.equal(
+      uniqueParts('MBBS, MD - General Medicine, MBBS, MD - General Medicine'),
+      'MBBS, MD - General Medicine',
+    );
+    assert.equal(uniqueParts('MBBS'), 'MBBS');
+    assert.equal(uniqueParts('mbbs, MBBS, , DNB'), 'mbbs, DNB');
+  });
+});
