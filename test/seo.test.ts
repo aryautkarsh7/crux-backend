@@ -156,3 +156,25 @@ describe('dynamic SEO figures', () => {
     assert.ok(t.related.length > 0 && t.related.length <= 6);
   });
 });
+
+describe('city hospitals figures', () => {
+  test('/seo/hospitals counts hospitals by type and area for one city', async () => {
+    const res = await get('/seo/hospitals?city=bangalore');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.city.slug, 'bangalore');
+    assert.ok(res.body.total >= 1);
+    const typed = res.body.types.reduce((n: number, t: { count: number }) => n + t.count, 0);
+    assert.ok(typed <= res.body.total);
+    for (const t of res.body.types) {
+      assert.ok(t.count > 0 && t.share > 0 && t.share <= 100);
+    }
+    // Areas are real localities: never the city's own name.
+    for (const a of res.body.areas) assert.notEqual(a.name.toLowerCase(), 'bengaluru');
+    assert.equal(res.body.areaCount, res.body.areas.length);
+  });
+
+  test('India has no per-city hospital page, and an unknown city is a 404', async () => {
+    assert.equal((await get('/seo/hospitals?city=india')).status, 404);
+    assert.equal((await get('/seo/hospitals?city=atlantis')).status, 404);
+  });
+});

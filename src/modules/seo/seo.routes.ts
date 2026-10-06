@@ -4,6 +4,7 @@ import { resolveCitySlug } from '../../lib/catalogue-store.js';
 import { notFound } from '../../lib/errors.js';
 import { SpecialtyModel } from '../../models/specialty.model.js';
 import { doctorStats } from './doctor-stats.js';
+import { hospitalStats } from './hospital-stats.js';
 import { sitemapData, sitemapIndex, sitemapPart } from './sitemap.js';
 import { surgeryStats } from './surgery-stats.js';
 
@@ -39,6 +40,14 @@ export async function seoRoutes(app: FastifyInstance) {
     const q = z.object({ city: z.string().trim().min(2).max(40) }).parse(request.query);
     reply.header('cache-control', SEO_CACHE);
     return surgeryStats(scopeCity(q.city));
+  });
+
+  app.get('/seo/hospitals', async (request, reply) => {
+    const q = z.object({ city: z.string().trim().min(2).max(40) }).parse(request.query);
+    const city = scopeCity(q.city);
+    if (!city) throw notFound('Hospital figures are per city');
+    reply.header('cache-control', SEO_CACHE);
+    return hospitalStats(city);
   });
 
   /** The pages worth listing in the sitemap: none without doctors, no hidden sample data. */
