@@ -8,6 +8,7 @@
  *   doctors who can actually be booked.
  * - A fee the doctor hasn't confirmed (feeVerified: false) marks the range it sets as approximate.
  */
+import { env } from '../../config/env.js';
 import { cities as allCities } from '../../lib/catalogue-store.js';
 import { bookingModeOf } from '../../lib/booking-mode.js';
 import { requestTimes, slotsForDay } from '../../lib/slot-gen.js';
@@ -310,6 +311,8 @@ async function compute(city: string | null, specialtySlug: string | null) {
           }
         : null,
     },
+    /** Every listed doctor is one Doctar's admin has verified (DOCTAR_VERIFIED_ONLY, no sample doctors). */
+    verifiedOnly: Boolean(env.DOCTAR_ENABLED && env.DOCTAR_VERIFIED_ONLY && !env.SHOW_SAMPLE_DATA),
     ...core(docs, avail),
     specialtyCount: specialties.length,
     cityCount: cityRows.length,
